@@ -181,7 +181,7 @@ const SERVICES = [
   {key:"fri", label:"금요기도회", dow:5},
   {key:"cls", label:"속회", dow:null},
 ];
-const POSITIONS = ["담임목사","부목사","전도사","장로","권사","안수집사","집사","성도","청년","학생","새가족"];
+const POSITIONS = ["담임목사","부목사","전도사","원로 장로","장로","원로 권사","권사","원로 집사","안수집사","집사","성도","청년","학생","새가족"];
 const PURPOSES = ["정기심방","새가족심방","환우심방","경조사","상담","전도","기도","기타"];
 const RELATIONS = ["배우자","아들","딸","아버지","어머니","형제","자매","손주","기타"];
 const ROLE_LABEL = {admin:"관리자", editor:"승인됨", pending:"승인 대기"};
@@ -720,14 +720,44 @@ function Home({churchName, members, att, go, openMember}){
 }
 
 /* ───────── 교인 목록 ───────── */
+function MemberCard({m, onClick}){
+  const age = calcAge(m.birth);
+  const cur = (m.depts||[]).filter(d=>d.current).map(d=>d.name).join(", ");
+  return (
+    <button className="mem-card" onClick={onClick}>
+      <div className="row" style={{justifyContent:"space-between"}}>
+        <span className="nm">{m.name}</span>
+        <span className="chip pos">{m.position||"성도"}</span>
+      </div>
+      <div className="sub">{age!==null ? `${age}세 · ` : ""}{m.phone || "연락처 없음"}</div>
+      {cur && <div className="sub">봉사: {cur}</div>}
+    </button>
+  );
+}
+
 function MemberList({members, setMemView}){
   const [q, setQ] = useState("");
   const [pos, setPos] = useState("전체");
-  const positions = ["전체", ...Array.from(new Set(members.map(m=>m.position).filter(Boolean)))];
+  const [mode, setMode] = useState("pos"); // pos=직분별 | name=가나다순
+  const positions = ["전체", ...Array.from(new Set(members.map(m=>m.position).filter(Boolean)))
+    .sort((a,b)=>{
+      const ia = POSITIONS.indexOf(a), ib = POSITIONS.indexOf(b);
+      if(ia!==-1 && ib!==-1) return ia-ib;
+      if(ia!==-1) return -1; if(ib!==-1) return 1;
+      return a.localeCompare(b,"ko");
+    })];
   const list = members
     .filter(m => pos==="전체" || m.position===pos)
     .filter(m => !q || (m.name+m.phone+m.address).includes(q))
     .sort(koSort);
+
+  const groups = useMemo(()=>{
+    const map = {};
+    list.forEach(m=>{ const p = m.position || "성도"; (map[p]=map[p]||[]).push(m); });
+    const known = POSITIONS.filter(p=>map[p]);
+    const extra = Object.keys(map).filter(p=>!POSITIONS.includes(p)).sort((a,b)=>a.localeCompare(b,"ko"));
+    return [...known, ...extra].map(p=>({pos:p, items:map[p]}));
+  }, [list]);
 
   return (
     <div>
@@ -741,25 +771,34 @@ function MemberList({members, setMemView}){
           <select value={pos} onChange={e=>setPos(e.target.value)}>
             {positions.map(p=><option key={p}>{p}</option>)}
           </select>
+          <div className="svc-tabs" style={{margin:0}}>
+            <button className={mode==="pos"?"on":""} onClick={()=>setMode("pos")}>직분별</button>
+            <button className={mode==="name"?"on":""} onClick={()=>setMode("name")}>가나다순</button>
+          </div>
         </div>
       </div>
 
       {list.length===0 ? <div className="panel empty">조건에 맞는 교인이 없습니다.</div> :
+       mode==="name" ?
         <div className="mem-list">
-          {list.map(m=>{
-            const age = calcAge(m.birth);
-            const cur = (m.depts||[]).filter(d=>d.current).map(d=>d.name).join(", ");
-            return (
-              <button key={m.id} className="mem-card" onClick={()=>setMemView({mode:"detail", id:m.id})}>
-                <div className="row" style={{justifyContent:"space-between"}}>
-                  <span className="nm">{m.name}</span>
-                  <span className="chip pos">{m.position||"성도"}</span>
-                </div>
-                <div className="sub">{age!==null ? `${age}세 · ` : ""}{m.phone || "연락처 없음"}</div>
-                {cur && <div className="sub">봉사: {cur}</div>}
-              </button>
-            );
-          })}
+          {list.map(m=>(
+            <MemberCard key={m.id} m={m} onClick={()=>setMemView({mode:"detail", id:m.id})}/>
+          ))}
+        </div>
+       :
+        <div>
+          {groups.map(g=>(
+            <div key={g.pos} style={{marginBottom:18}}>
+              <h3 style={{margin:"0 0 8px", fontSize:"17px", color:"var(--pine-deep)",
+                borderBottom:"2px solid var(--gold)", display:"inline-block", paddingBottom:"2px"}}>
+                {g.pos} <span className="muted small">{g.items.length}명</span></h3>
+              <div className="mem-list">
+                {g.items.map(m=>(
+                  <MemberCard key={m.id} m={m} onClick={()=>setMemView({mode:"detail", id:m.id})}/>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>}
     </div>
   );
