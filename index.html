@@ -125,6 +125,10 @@
   .err-banner{background:var(--clay-soft);border:1px solid #DFB1A2;color:#7C2E1E;
     border-radius:10px;padding:10px 14px;font-size:13.5px;margin:14px 0}
 
+  .modal-back{position:fixed;inset:0;background:rgba(18,30,25,.55);display:flex;
+    align-items:center;justify-content:center;z-index:60;padding:16px}
+  .modal-back .panel{max-width:440px;width:100%;margin:0}
+
   .center-box{max-width:430px;margin:60px auto;padding:0 16px}
   .center-box .panel{padding:26px 26px 24px}
   .center-box .logo-line{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:14px;
@@ -183,7 +187,7 @@ const SERVICES = [
 ];
 const POSITIONS = ["담임목사","부목사","전도사","원로 장로","장로","원로 권사","권사","원로 집사","안수집사","집사","성도","청년","학생","새가족"];
 const PURPOSES = ["정기심방","새가족심방","환우심방","경조사","상담","전도","기도","기타"];
-const RELATIONS = ["배우자","아들","딸","아버지","어머니","형제","자매","손주","기타"];
+const RELATIONS = ["남편","아내","배우자","아들","딸","며느리","사위","손자","손녀","외손자","외손녀","조카","아버지","어머니","형제","자매","기타"];
 const ROLE_LABEL = {admin:"관리자", editor:"승인됨", pending:"승인 대기"};
 
 const emptyMember = () => ({
@@ -492,38 +496,49 @@ function App({sb, profile, logout}){
     a.download = `교인관리_백업_${todayStr()}.json`;
     a.click(); URL.revokeObjectURL(a.href);
   };
+  const [pendingImport, setPendingImport] = useState(null);
   const doImport = (file) => {
     const r = new FileReader();
-    r.onload = async () => {
+    r.onload = () => {
       try{
         const d = JSON.parse(r.result);
         if(!d || !Array.isArray(d.members)) throw new Error("형식 오류");
-        if(!confirm(`백업 파일에 교인 ${d.members.length}명의 기록이 있습니다.\n서버의 현재 기록을 이 백업으로 교체할까요?\n(모든 사용자에게 함께 적용됩니다. 교체 전 현재 기록을 내보내기 해두시길 권합니다)`)) return;
-        setErr("");
-        let e;
-        ({error:e} = await sb.from("church_members").delete().neq("id","")); if(e) return fail(e);
-        ({error:e} = await sb.from("church_attendance").delete().neq("date","")); if(e) return fail(e);
-        if(d.members.length){
-          const rows = d.members.map(m=>({id:m.id||uid(), data:m, updated_at:new Date().toISOString(), updated_by:profile.id}));
-          for(let i=0;i<rows.length;i+=100){
-            ({error:e} = await sb.from("church_members").insert(rows.slice(i,i+100))); if(e) return fail(e);
-          }
-        }
-        const arows = [];
-        const attIn = d.att||{};
-        for(const dt in attIn) for(const s in attIn[dt])
-          if((attIn[dt][s]||[]).length) arows.push({date:dt, service:s, member_ids:attIn[dt][s]});
-        for(let i=0;i<arows.length;i+=100){
-          ({error:e} = await sb.from("church_attendance").insert(arows.slice(i,i+100))); if(e) return fail(e);
-        }
-        if(d.churchName){
-          await sb.from("church_settings").upsert({key:"churchName", value:d.churchName});
-        }
-        await loadAll();
-        alert("가져오기가 완료되었습니다.");
+        setPendingImport(d);
       }catch(e){ alert("백업 파일을 읽지 못했습니다. 이 프로그램에서 내보낸 JSON 파일인지 확인해 주세요."); }
     };
     r.readAsText(file);
+  };
+  const runImport = async (mode) => {
+    const d = pendingImport;
+    setPendingImport(null);
+    setErr("");
+    let e;
+    if(mode === "replace"){
+      ({error:e} = await sb.from("church_members").delete().neq("id","")); if(e) return fail(e);
+      ({error:e} = await sb.from("church_attendance").delete().neq("date","")); if(e) return fail(e);
+    }
+    const rows = (d.members||[]).map(m=>({id:m.id||uid(), data:m, updated_at:new Date().toISOString(), updated_by:profile.id}));
+    for(let i=0;i<rows.length;i+=100){
+      ({error:e} = await sb.from("church_members").upsert(rows.slice(i,i+100))); if(e) return fail(e);
+    }
+    const attIn = d.att||{};
+    const arows = [];
+    for(const dt in attIn) for(const s in attIn[dt]){
+      let ids = attIn[dt][s]||[];
+      if(mode === "merge"){
+        const cur = (att[dt] && att[dt][s]) || [];
+        ids = Array.from(new Set([...cur, ...ids]));
+      }
+      if(ids.length) arows.push({date:dt, service:s, member_ids:ids, updated_at:new Date().toISOString()});
+    }
+    for(let i=0;i<arows.length;i+=100){
+      ({error:e} = await sb.from("church_attendance").upsert(arows.slice(i,i+100))); if(e) return fail(e);
+    }
+    if(d.churchName && (mode === "replace" || !churchName || churchName === "우리교회")){
+      await sb.from("church_settings").upsert({key:"churchName", value:d.churchName});
+    }
+    await loadAll();
+    alert(mode === "merge" ? "명단을 합쳐 넣었습니다." : "가져오기(전체 교체)가 완료되었습니다.");
   };
 
   const byId = id => members.find(m => m.id === id);
@@ -535,6 +550,21 @@ function App({sb, profile, logout}){
 
   return (
     <div>
+      {pendingImport && (
+        <div className="modal-back" onClick={()=>setPendingImport(null)}>
+          <div className="panel" onClick={e=>e.stopPropagation()}>
+            <h2>명단 가져오기</h2>
+            <p className="small">파일에 교인 <b>{pendingImport.members.length}명</b>의 기록이 있습니다. 어떻게 넣을까요?</p>
+            <button className="btn" style={{width:"100%",marginBottom:8}} onClick={()=>runImport("merge")}>
+              추가하기 — 기존 기록은 그대로 두고 합침 (권장)</button>
+            <button className="btn danger" style={{width:"100%",marginBottom:8}} onClick={()=>runImport("replace")}>
+              전체 교체 — 기존 교인·출석 기록을 지우고 이 파일로 바꿈</button>
+            <button className="btn ghost" style={{width:"100%"}} onClick={()=>setPendingImport(null)}>취소</button>
+            <p className="muted small" style={{marginTop:10,marginBottom:0}}>
+              추가하기를 누르면 새 교인은 추가되고, 같은 교인(같은 고유번호)은 파일 내용으로 갱신됩니다. 모든 사용자에게 함께 적용됩니다.</p>
+          </div>
+        </div>
+      )}
       <header className="top">
         <div className="top-in">
           <div className="brand">
