@@ -92,6 +92,7 @@
   .chip.admin{background:var(--gold-soft);color:#7A5E14}
   .chip.editor{background:var(--pine-soft);color:var(--pine-deep)}
   .chip.pending{background:var(--clay-soft);color:var(--clay)}
+  .chip.viewer{background:#E2E9F2;color:#3D5A80}
 
   .mem-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
   .mem-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;
@@ -153,6 +154,9 @@ const {useState, useEffect, useMemo, useRef, useCallback} = React;
 
 /* ───────── 공통 ───────── */
 const CFG_KEY = "church-app-server-config";
+// ▼▼ 아래 두 줄에 서버 정보를 넣으면 '처음 설정' 화면 없이 링크만으로 접속됩니다 ▼▼
+const EMBED_URL = "https://phrouczwgefjshqtrzom.supabase.co";
+const EMBED_KEY = "sb_publishable_j-H0uwFOIx7x8y8zapJfAQ_RK_llEpj";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const pad = n => String(n).padStart(2, "0");
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
@@ -188,7 +192,7 @@ const SERVICES = [
 const POSITIONS = ["담임목사","부목사","전도사","원로 장로","장로","원로 권사","권사","원로 집사","안수집사","집사","성도","청년","학생","새가족"];
 const PURPOSES = ["정기심방","새가족심방","환우심방","경조사","상담","전도","기도","기타"];
 const RELATIONS = ["남편","아내","배우자","아들","딸","며느리","사위","손자","손녀","외손자","외손녀","조카","아버지","어머니","형제","자매","기타"];
-const ROLE_LABEL = {admin:"관리자", editor:"승인됨", pending:"승인 대기"};
+const ROLE_LABEL = {admin:"관리자", editor:"수정 가능", viewer:"열람만", pending:"승인 대기"};
 
 const emptyMember = () => ({
   id: uid(), name:"", birth:"", phone:"", address:"", position:"성도", memo:"",
@@ -293,7 +297,7 @@ function Setup({onSave, initial}){
 }
 
 /* ───────── 로그인 / 회원가입 ───────── */
-function Auth({sb, resetServer}){
+function Auth({sb, resetServer, embedded}){
   const [mode, setMode] = useState("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -337,8 +341,10 @@ function Auth({sb, resetServer}){
           onClick={submit}>{busy ? "처리 중…" : (mode==="login" ? "로그인" : "가입 신청")}</button>
         {mode==="signup" &&
           <p className="small muted" style={{marginBottom:0}}>가입 후에는 <b>관리자(담임목사)의 승인</b>이 있어야 교인 기록을 볼 수 있습니다.</p>}
-        <hr className="divider"/>
-        <button className="btn sm ghost" onClick={resetServer}>서버 주소 다시 설정</button>
+        {!embedded && <React.Fragment>
+          <hr className="divider"/>
+          <button className="btn sm ghost" onClick={resetServer}>서버 주소 다시 설정</button>
+        </React.Fragment>}
       </div>
     </div>
   );
@@ -365,7 +371,9 @@ function Pending({profile, logout, refresh}){
 
 /* ───────── 최상위 ───────── */
 function Root(){
+  const embedded = !!(EMBED_URL && EMBED_KEY);
   const [cfg, setCfg] = useState(()=>{
+    if(EMBED_URL && EMBED_KEY) return {url:EMBED_URL, key:EMBED_KEY};
     try{ const c = JSON.parse(localStorage.getItem(CFG_KEY)); if(c && c.url && c.key) return c; }catch(e){}
     return null;
   });
@@ -396,7 +404,7 @@ function Root(){
 
   if(!cfg) return <Setup onSave={saveCfg} initial={lastCfg}/>;
   if(session === undefined) return <div className="center-box"><div className="panel empty">서버에 연결하는 중…</div></div>;
-  if(!session) return <Auth sb={sb} resetServer={resetServer}/>;
+  if(!session) return <Auth sb={sb} resetServer={resetServer} embedded={embedded}/>;
   if(profile === undefined) return <div className="center-box"><div className="panel empty">사용자 정보를 확인하는 중…</div></div>;
   if(profile.role === "pending") return <Pending profile={profile} logout={logout} refresh={loadProfile}/>;
   return <App sb={sb} profile={profile} logout={logout}/>;
@@ -413,6 +421,7 @@ function App({sb, profile, logout}){
   const [memView, setMemView] = useState({mode:"list"});
   const fileRef = useRef(null);
   const isAdmin = profile.role === "admin";
+  const canEdit = profile.role === "admin" || profile.role === "editor";
 
   const fail = e => setErr("저장/불러오기에 실패했습니다 — 원인: " + errMsg(e) + " · 이 문구를 Claude에게 보여주시면 해결할 수 있습니다.");
 
@@ -578,7 +587,7 @@ function App({sb, profile, logout}){
           </nav>
           <div className="row" style={{gap:6}}>
             <button className="backup-btn" onClick={loadAll} title="다른 사람이 입력한 내용 반영">새로고침</button>
-            <button className="backup-btn" onClick={doExport}>백업</button>
+            {canEdit && <button className="backup-btn" onClick={doExport}>백업</button>}
             {isAdmin && <button className="backup-btn" onClick={()=>fileRef.current.click()}>가져오기</button>}
             <button className="backup-btn" onClick={logout}>{profile.name || "나"} · 로그아웃</button>
             <input ref={fileRef} type="file" accept=".json,application/json" style={{display:"none"}}
@@ -592,11 +601,11 @@ function App({sb, profile, logout}){
         {!loaded ? <div className="panel empty">기록을 불러오는 중…</div> : <React.Fragment>
         {view==="home" && <Home churchName={churchName} members={members} att={att} go={go} openMember={openMember}/>}
         {view==="members" && (
-          memView.mode==="list" ? <MemberList members={members} setMemView={setMemView}/> :
+          memView.mode==="list" ? <MemberList members={members} setMemView={setMemView} canEdit={canEdit}/> :
           memView.mode==="form" ? <MemberForm init={memView.id ? byId(memView.id) : null}
               onCancel={()=>setMemView(memView.id ? {mode:"detail", id:memView.id} : {mode:"list"})}
               onSave={(m)=>{ saveMemberRow(m); setMemView({mode:"detail", id:m.id}); }}/> :
-          <MemberDetail m={byId(memView.id)} att={att} setMemView={setMemView}
+          <MemberDetail m={byId(memView.id)} att={att} setMemView={setMemView} canEdit={canEdit}
             update={fn=>updateMember(memView.id, fn)}
             remove={()=>{
               const m = byId(memView.id);
@@ -606,9 +615,9 @@ function App({sb, profile, logout}){
               }
             }}/>
         )}
-        {view==="att" && <Attendance members={members} att={att} saveAtt={saveAtt}/>}
-        {view==="visit" && <Visits members={members} update={updateMember} openMember={openMember}/>}
-        {view==="pray" && <Prayers members={members} update={updateMember} openMember={openMember}/>}
+        {view==="att" && <Attendance members={members} att={att} saveAtt={saveAtt} canEdit={canEdit}/>}
+        {view==="visit" && <Visits members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>}
+        {view==="pray" && <Prayers members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>}
         {view==="team" && isAdmin && <Team sb={sb} me={profile}/>}
         </React.Fragment>}
       </div>
@@ -639,7 +648,7 @@ function Team({sb, me}){
     <div>
       <div className="panel">
         <h2>승인 대기 <span className="muted small">{pending.length}명</span></h2>
-        <p className="small muted">가입 신청한 사람 중 <b>믿을 수 있는 분만 승인</b>해 주세요. 승인된 사람은 모든 교인 정보를 보고 수정할 수 있습니다.</p>
+        <p className="small muted">가입 신청한 사람 중 <b>믿을 수 있는 분만 승인</b>해 주세요. <b>열람 허용</b>은 보기만, <b>수정 허용</b>은 등록·수정까지 가능합니다.</p>
         {err && <div className="err-banner">{err}</div>}
         {rows===null ? <p className="empty">불러오는 중…</p> :
          pending.length===0 ? <p className="empty">승인을 기다리는 사람이 없습니다.</p> :
@@ -650,7 +659,10 @@ function Team({sb, me}){
                 <td>{r.name || <span className="muted">이름 없음</span>}</td>
                 <td>{r.email}</td>
                 <td>{(r.created_at||"").slice(0,10)}</td>
-                <td><button className="btn sm gold" onClick={()=>setRole(r.id,"editor")}>승인</button></td>
+                <td style={{whiteSpace:"nowrap"}}>
+                  <button className="btn sm ghost" onClick={()=>setRole(r.id,"viewer")}>열람 허용</button>{" "}
+                  <button className="btn sm gold" onClick={()=>setRole(r.id,"editor")}>수정 허용</button>
+                </td>
               </tr>))}
             </tbody></table></div>}
       </div>
@@ -667,12 +679,14 @@ function Team({sb, me}){
                 <td><span className={"chip "+r.role}>{ROLE_LABEL[r.role]||r.role}</span></td>
                 <td style={{whiteSpace:"nowrap"}}>
                   {r.id!==me.id && <React.Fragment>
-                    {r.role==="editor" &&
+                    {r.role!=="viewer" &&
+                      <button className="btn sm ghost" onClick={()=>setRole(r.id,"viewer")}>열람만</button>}{" "}
+                    {r.role!=="editor" &&
+                      <button className="btn sm ghost" onClick={()=>setRole(r.id,"editor")}>수정 가능</button>}{" "}
+                    {r.role!=="admin" &&
                       <button className="btn sm ghost" onClick={()=>{
                         if(confirm(`${r.name||r.email} 님을 관리자로 지정할까요? 관리자는 사용자 승인 권한도 갖게 됩니다.`)) setRole(r.id,"admin");
-                      }}>관리자로</button>}
-                    {r.role==="admin" &&
-                      <button className="btn sm ghost" onClick={()=>setRole(r.id,"editor")}>일반으로</button>}{" "}
+                      }}>관리자로</button>}{" "}
                     <button className="btn sm danger" onClick={()=>{
                       if(confirm(`${r.name||r.email} 님의 접근 권한을 해제할까요? 다시 승인하기 전까지 교인 기록을 볼 수 없게 됩니다.`)) setRole(r.id,"pending");
                     }}>권한 해제</button>
@@ -765,7 +779,7 @@ function MemberCard({m, onClick}){
   );
 }
 
-function MemberList({members, setMemView}){
+function MemberList({members, setMemView, canEdit}){
   const [q, setQ] = useState("");
   const [pos, setPos] = useState("전체");
   const [mode, setMode] = useState("pos"); // pos=직분별 | name=가나다순
@@ -794,7 +808,7 @@ function MemberList({members, setMemView}){
       <div className="panel">
         <div className="row" style={{justifyContent:"space-between"}}>
           <h2 style={{margin:0}}>교인 명부 <span className="muted small">{members.length}명</span></h2>
-          <button className="btn gold" onClick={()=>setMemView({mode:"form"})}>+ 새 교인 등록</button>
+          {canEdit && <button className="btn gold" onClick={()=>setMemView({mode:"form"})}>+ 새 교인 등록</button>}
         </div>
         <div className="row" style={{marginTop:14}}>
           <input placeholder="이름·연락처·주소 검색" value={q} onChange={e=>setQ(e.target.value)} style={{flex:"1 1 200px"}}/>
@@ -905,7 +919,7 @@ function MemberForm({init, onSave, onCancel}){
 }
 
 /* ───────── 교인 상세 ───────── */
-function MemberDetail({m, att, setMemView, update, remove}){
+function MemberDetail({m, att, setMemView, update, remove, canEdit}){
   const [vWhen, setVWhen] = useState(nowLocal());
   const [vPurpose, setVPurpose] = useState("정기심방");
   const [vNote, setVNote] = useState("");
@@ -934,10 +948,10 @@ function MemberDetail({m, att, setMemView, update, remove}){
       <div className="panel">
         <div className="row" style={{justifyContent:"space-between"}}>
           <h2 style={{margin:0}}>{m.name} <span className="chip pos">{m.position||"성도"}</span></h2>
-          <div className="row" style={{gap:6}}>
+          {canEdit && <div className="row" style={{gap:6}}>
             <button className="btn sm" onClick={()=>setMemView({mode:"form", id:m.id})}>정보 수정</button>
             <button className="btn sm danger" onClick={remove}>삭제</button>
-          </div>
+          </div>}
         </div>
         <div className="tbl-wrap" style={{marginTop:12}}><table>
           <tbody>
@@ -996,11 +1010,12 @@ function MemberDetail({m, att, setMemView, update, remove}){
                 <td style={{whiteSpace:"nowrap"}}>{fmtDT(v.when)}</td>
                 <td><span className="chip pos">{v.purpose}</span></td>
                 <td style={{whiteSpace:"pre-wrap"}}>{v.note}</td>
-                <td><button className="btn sm danger" onClick={()=>{
+                <td>{canEdit && <button className="btn sm danger" onClick={()=>{
                   if(confirm("이 심방 기록을 삭제할까요?")) update(o=>({...o, visits:o.visits.filter(x=>x.id!==v.id)}));
-                }}>삭제</button></td>
+                }}>삭제</button>}</td>
               </tr>))}
             </tbody></table></div>}
+        {canEdit && <React.Fragment>
         <h3>새 심방 기록</h3>
         <div className="row">
           <input type="datetime-local" value={vWhen} onChange={e=>setVWhen(e.target.value)}/>
@@ -1015,6 +1030,7 @@ function MemberDetail({m, att, setMemView, update, remove}){
             setVNote(""); setVWhen(nowLocal());
           }}>기록 추가</button>
         </div>
+        </React.Fragment>}
       </div>
 
       <div className="panel">
@@ -1032,6 +1048,7 @@ function MemberDetail({m, att, setMemView, update, remove}){
                     : <span className="chip open">요청중</span>}
                 </td>
                 <td style={{whiteSpace:"nowrap"}}>
+                  {canEdit && <React.Fragment>
                   <button className="btn sm ghost" onClick={()=>update(o=>({...o, prayers:o.prayers.map(x=>
                     x.id===p.id ? (x.status==="answered" ? {...x,status:"open",answeredDate:""} : {...x,status:"answered",answeredDate:todayStr()}) : x)}))}>
                     {p.status==="answered" ? "요청중으로" : "응답 체크"}
@@ -1039,9 +1056,11 @@ function MemberDetail({m, att, setMemView, update, remove}){
                   <button className="btn sm danger" onClick={()=>{
                     if(confirm("이 기도 제목을 삭제할까요?")) update(o=>({...o, prayers:o.prayers.filter(x=>x.id!==p.id)}));
                   }}>삭제</button>
+                  </React.Fragment>}
                 </td>
               </tr>))}
             </tbody></table></div>}
+        {canEdit && <React.Fragment>
         <h3>새 기도 제목</h3>
         <div className="row">
           <input placeholder="기도 요청 사항" value={pReq} onChange={e=>setPReq(e.target.value)} style={{flex:"1 1 240px"}}/>
@@ -1050,13 +1069,14 @@ function MemberDetail({m, att, setMemView, update, remove}){
             setPReq("");
           }}>추가</button>
         </div>
+        </React.Fragment>}
       </div>
     </div>
   );
 }
 
 /* ───────── 출석 체크 ───────── */
-function Attendance({members, att, saveAtt}){
+function Attendance({members, att, saveAtt, canEdit}){
   const [svc, setSvc] = useState("sun");
   const svcObj = SERVICES.find(s=>s.key===svc);
   const [date, setDate] = useState(()=> lastWeekday(0));
@@ -1066,6 +1086,7 @@ function Attendance({members, att, saveAtt}){
 
   const checked = (att[date] && att[date][svc]) || [];
   const toggle = id => {
+    if(!canEdit) return;
     const ids = checked.includes(id) ? checked.filter(x=>x!==id) : [...checked, id];
     saveAtt(date, svc, ids);
   };
@@ -1091,7 +1112,7 @@ function Attendance({members, att, saveAtt}){
           <span className="muted">{date && `${weekdayOf(date)}요일`}</span>
           <span className="count-badge" style={{marginLeft:"auto"}}>{checked.length}</span>
           <span className="muted small">/ {members.length}명 출석</span>
-          <button className="btn sm danger" onClick={clearAll} disabled={!checked.length}>모두 해제</button>
+          {canEdit && <button className="btn sm danger" onClick={clearAll} disabled={!checked.length}>모두 해제</button>}
         </div>
         <div className="row" style={{marginTop:10}}>
           <input placeholder="이름 검색" value={q} onChange={e=>setQ(e.target.value)} style={{flex:"1 1 160px",maxWidth:260}}/>
@@ -1109,7 +1130,7 @@ function Attendance({members, att, saveAtt}){
                 </button>);
             })}
           </div>}
-        <p className="muted small" style={{marginTop:14,marginBottom:0}}>이름을 누르면 출석/해제가 되고, 체크 즉시 서버에 저장됩니다.</p>
+        <p className="muted small" style={{marginTop:14,marginBottom:0}}>{canEdit ? "이름을 누르면 출석/해제가 되고, 체크 즉시 서버에 저장됩니다." : "열람 권한으로 접속 중입니다. 출석 체크는 수정 권한이 있는 분만 할 수 있습니다."}</p>
       </div>
 
       <div className="panel">
@@ -1134,7 +1155,7 @@ function Attendance({members, att, saveAtt}){
 }
 
 /* ───────── 심방 전체 ───────── */
-function Visits({members, update, openMember}){
+function Visits({members, update, openMember, canEdit}){
   const [memId, setMemId] = useState("");
   const [when, setWhen] = useState(nowLocal());
   const [purpose, setPurpose] = useState("정기심방");
@@ -1145,7 +1166,7 @@ function Visits({members, update, openMember}){
 
   return (
     <div>
-      <div className="panel">
+      {canEdit && <div className="panel">
         <h2>새 심방 기록</h2>
         {members.length===0 ? <p className="empty">먼저 교인을 등록해 주세요.</p> :
         <div>
@@ -1167,7 +1188,7 @@ function Visits({members, update, openMember}){
             }}>기록 추가</button>
           </div>
         </div>}
-      </div>
+      </div>}
 
       <div className="panel">
         <h2>심방 기록 전체 <span className="muted small">{all.length}건</span></h2>
@@ -1180,10 +1201,10 @@ function Visits({members, update, openMember}){
                 <td><button className="btn sm ghost" onClick={()=>openMember(v.memId)}>{v.memName}</button></td>
                 <td><span className="chip pos">{v.purpose}</span></td>
                 <td style={{whiteSpace:"pre-wrap"}}>{v.note}</td>
-                <td><button className="btn sm danger" onClick={()=>{
+                <td>{canEdit && <button className="btn sm danger" onClick={()=>{
                   if(confirm("이 심방 기록을 삭제할까요?"))
                     update(v.memId, o=>({...o, visits:o.visits.filter(x=>x.id!==v.id)}));
-                }}>삭제</button></td>
+                }}>삭제</button>}</td>
               </tr>))}
             </tbody></table></div>}
       </div>
@@ -1192,7 +1213,7 @@ function Visits({members, update, openMember}){
 }
 
 /* ───────── 중보기도 전체 ───────── */
-function Prayers({members, update, openMember}){
+function Prayers({members, update, openMember, canEdit}){
   const [filter, setFilter] = useState("open");
   const [memId, setMemId] = useState("");
   const [req, setReq] = useState("");
@@ -1204,7 +1225,7 @@ function Prayers({members, update, openMember}){
 
   return (
     <div>
-      <div className="panel">
+      {canEdit && <div className="panel">
         <h2>새 기도 요청</h2>
         {members.length===0 ? <p className="empty">먼저 교인을 등록해 주세요.</p> :
         <div className="row">
@@ -1218,7 +1239,7 @@ function Prayers({members, update, openMember}){
             setReq("");
           }}>추가</button>
         </div>}
-      </div>
+      </div>}
 
       <div className="panel">
         <div className="row" style={{justifyContent:"space-between"}}>
@@ -1242,6 +1263,7 @@ function Prayers({members, update, openMember}){
                     : <span className="chip open">요청중</span>}
                 </td>
                 <td style={{whiteSpace:"nowrap"}}>
+                  {canEdit && <React.Fragment>
                   <button className="btn sm ghost" onClick={()=>update(p.memId, o=>({...o, prayers:o.prayers.map(x=>
                     x.id===p.id ? (x.status==="answered" ? {...x,status:"open",answeredDate:""} : {...x,status:"answered",answeredDate:todayStr()}) : x)}))}>
                     {p.status==="answered" ? "요청중으로" : "응답 체크"}
@@ -1250,6 +1272,7 @@ function Prayers({members, update, openMember}){
                     if(confirm("이 기도 제목을 삭제할까요?"))
                       update(p.memId, o=>({...o, prayers:o.prayers.filter(x=>x.id!==p.id)}));
                   }}>삭제</button>
+                  </React.Fragment>}
                 </td>
               </tr>))}
             </tbody></table></div>}
