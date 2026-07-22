@@ -100,6 +100,19 @@
   .mem-card:hover{border-color:var(--pine);box-shadow:0 3px 12px rgba(47,93,80,.15)}
   .mem-card .nm{font-family:"Gowun Batang",serif;font-size:18px;font-weight:700}
   .mem-card .sub{color:var(--muted);font-size:13px;margin-top:3px}
+  .mc-top{display:flex;gap:11px;align-items:flex-start}
+  .mem-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;border:1px solid var(--line);flex:none}
+  .mem-avatar.ph{display:flex;align-items:center;justify-content:center;background:var(--pine-soft);
+    color:var(--pine-deep);font-family:"Gowun Batang",serif;font-weight:700;font-size:18px}
+  .mem-detail-head{display:flex;gap:14px;align-items:flex-start}
+  .mem-photo-lg{width:88px;height:88px;border-radius:12px;object-fit:cover;border:1px solid var(--line);flex:none}
+  .photo-row{display:flex;gap:14px;align-items:flex-start;margin:4px 0 14px}
+  .photo-box{width:96px;height:96px;border-radius:12px;border:1px dashed var(--line);flex:none;
+    display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}
+  .photo-box img{width:100%;height:100%;object-fit:cover}
+  .photo-box .photo-ph{color:var(--muted);font-size:12.5px;text-align:center}
+  .photo-pick{display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .col{display:flex;flex-direction:column}
 
   table{width:100%;border-collapse:collapse;font-size:14.5px}
   th{text-align:left;color:var(--pine-deep);font-size:13px;border-bottom:2px solid var(--line);padding:6px 8px;white-space:nowrap}
@@ -158,6 +171,32 @@ const CFG_KEY = "church-app-server-config";
 const EMBED_URL = "https://phrouczwgefjshqtrzom.supabase.co";
 const EMBED_KEY = "sb_publishable_j-H0uwFOIx7x8y8zapJfAQ_RK_llEpj";
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+/* 가져오기(합치기)에서 빈 값이 기존 값을 덮어쓰지 않도록 필드 단위로 병합 */
+const isEmptyVal = v => v===undefined || v===null || v==="" || (Array.isArray(v) && v.length===0);
+const mergeMember = (ex, im) => { const out={...ex}; for(const k in im){ if(!isEmptyVal(im[k])) out[k]=im[k]; } return out; };
+
+/* 교인 사진: 선택한 이미지 파일을 작게 압축해 base64 문자열로 변환 */
+const readPhoto = (file) => new Promise((resolve, reject)=>{
+  const r = new FileReader();
+  r.onerror = () => reject(new Error("read"));
+  r.onload = () => {
+    const img = new Image();
+    img.onerror = () => reject(new Error("img"));
+    img.onload = () => {
+      const max = 480;
+      let w = img.width, h = img.height;
+      const scale = Math.min(1, max / Math.max(w, h));
+      w = Math.round(w*scale); h = Math.round(h*scale);
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL("image/jpeg", 0.82));
+    };
+    img.src = r.result;
+  };
+  r.readAsDataURL(file);
+});
 const pad = n => String(n).padStart(2, "0");
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
 const nowLocal = () => { const d = new Date(); return `${todayStr()}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -212,7 +251,7 @@ const sokLabel = s => `${s.g}자 ${s.n}속 (${s.n}${s.g}선교회)`;
 const ROLE_LABEL = {admin:"관리자", editor:"수정 가능", viewer:"열람만", pending:"승인 대기"};
 
 const emptyMember = () => ({
-  id: uid(), name:"", birth:"", phone:"", address:"", position:"성도", gender:"", memo:"",
+  id: uid(), name:"", birth:"", phone:"", address:"", position:"성도", gender:"", memo:"", photo:"",
   family:[], depts:[], visits:[], prayers:[]
 });
 
@@ -543,7 +582,12 @@ function App({sb, profile, logout}){
       ({error:e} = await sb.from("church_members").delete().neq("id","")); if(e) return fail(e);
       ({error:e} = await sb.from("church_attendance").delete().neq("date","")); if(e) return fail(e);
     }
-    const rows = (d.members||[]).map(m=>({id:m.id||uid(), data:m, updated_at:new Date().toISOString(), updated_by:profile.id}));
+    const curById = {};
+    if(mode === "merge") members.forEach(x=>{ curById[x.id] = x; });
+    const rows = (d.members||[]).map(im=>{
+      const data = (mode === "merge" && im.id && curById[im.id]) ? mergeMember(curById[im.id], im) : im;
+      return {id:im.id||uid(), data, updated_at:new Date().toISOString(), updated_by:profile.id};
+    });
     for(let i=0;i<rows.length;i+=100){
       ({error:e} = await sb.from("church_members").upsert(rows.slice(i,i+100))); if(e) return fail(e);
     }
@@ -786,12 +830,19 @@ function MemberCard({m, onClick}){
   const cur = (m.depts||[]).filter(d=>d.current).map(d=>d.name).join(", ");
   return (
     <button className="mem-card" onClick={onClick}>
-      <div className="row" style={{justifyContent:"space-between"}}>
-        <span className="nm">{m.name}</span>
-        <span className="chip pos">{m.position||"성도"}</span>
+      <div className="mc-top">
+        {m.photo
+          ? <img className="mem-avatar" src={m.photo} alt=""/>
+          : <span className="mem-avatar ph">{(m.name||"?").slice(0,1)}</span>}
+        <div style={{flex:"1 1 auto", minWidth:0}}>
+          <div className="row" style={{justifyContent:"space-between"}}>
+            <span className="nm">{m.name}</span>
+            <span className="chip pos">{m.position||"성도"}</span>
+          </div>
+          <div className="sub">{age!==null ? `${age}세 · ` : ""}{m.phone || "연락처 없음"}</div>
+          {cur && <div className="sub">봉사: {cur}</div>}
+        </div>
       </div>
-      <div className="sub">{age!==null ? `${age}세 · ` : ""}{m.phone || "연락처 없음"}</div>
-      {cur && <div className="sub">봉사: {cur}</div>}
     </button>
   );
 }
@@ -949,6 +1000,25 @@ function MemberForm({init, onSave, onCancel}){
     <div className="panel">
       <h2>{init ? "교인 정보 수정" : "새 교인 등록"}</h2>
 
+      <div className="photo-row">
+        <div className="photo-box">
+          {m.photo
+            ? <img src={m.photo} alt="교인 사진"/>
+            : <span className="photo-ph">사진 없음</span>}
+        </div>
+        <div className="col" style={{gap:6}}>
+          <label className="btn sm ghost photo-pick">
+            {m.photo ? "사진 변경" : "사진 선택"}
+            <input type="file" accept="image/*" style={{display:"none"}}
+              onChange={async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return;
+                try{ set("photo", await readPhoto(f)); }
+                catch(_){ alert("사진을 불러오지 못했습니다. 다른 사진으로 다시 시도해 주세요."); } }}/>
+          </label>
+          {m.photo && <button className="btn sm danger" onClick={()=>set("photo","")}>사진 삭제</button>}
+          <span className="muted small">휴대폰·아이패드에서는 앨범이나 카메라를 선택할 수 있습니다. 사진은 자동으로 작게 저장됩니다.</span>
+        </div>
+      </div>
+
       <div className="form-grid">
         <div className="field"><label>이름 *</label>
           <input value={m.name} onChange={e=>set("name",e.target.value)} placeholder="홍길동"/></div>
@@ -1041,12 +1111,15 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit}){
       </div>
 
       <div className="panel">
-        <div className="row" style={{justifyContent:"space-between"}}>
-          <h2 style={{margin:0}}>{m.name} <span className="chip pos">{m.position||"성도"}</span></h2>
-          {canEdit && <div className="row" style={{gap:6}}>
-            <button className="btn sm" onClick={()=>setMemView({mode:"form", id:m.id})}>정보 수정</button>
-            <button className="btn sm danger" onClick={remove}>삭제</button>
-          </div>}
+        <div className="mem-detail-head">
+          {m.photo && <img className="mem-photo-lg" src={m.photo} alt={m.name+" 사진"}/>}
+          <div className="row" style={{justifyContent:"space-between", flex:"1 1 auto"}}>
+            <h2 style={{margin:0}}>{m.name} <span className="chip pos">{m.position||"성도"}</span></h2>
+            {canEdit && <div className="row" style={{gap:6}}>
+              <button className="btn sm" onClick={()=>setMemView({mode:"form", id:m.id})}>정보 수정</button>
+              <button className="btn sm danger" onClick={remove}>삭제</button>
+            </div>}
+          </div>
         </div>
         <div className="tbl-wrap" style={{marginTop:12}}><table>
           <tbody>
