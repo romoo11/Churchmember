@@ -239,9 +239,18 @@ const PURPOSES = ["정기심방","새가족심방","환우심방","경조사","�
 const RELATIONS = ["남편","아내","배우자","아들","딸","며느리","사위","손자","손녀","외손자","외손녀","조카","아버지","어머니","할아버지","할머니","형","오빠","누나","언니","남동생","여동생","형제","자매","삼촌","고모","이모","외삼촌","기타"];
 
 /* 속회(선교회) 배정: 메모의 선교회 기록 우선, 없으면 성별+출생연도로 자동 */
+/* 교회학교 부서 (현재 나이 기준). 이 나이대는 속별 명부에서 제외됨 */
+const SCHOOL_DEPTS = [
+  {key:"kinder", label:"유치부 (5~7세)", min:5, max:7},
+  {key:"child", label:"아동부 (8~13세)", min:8, max:13},
+  {key:"youth", label:"중고등부 (14~19세)", min:14, max:19},
+  {key:"young", label:"청년부 (20~29세)", min:20, max:29},
+];
+/* 교회학교 최고 나이 이하는 속 편성에서 제외 (현재 29세 이하) */
+const schoolMaxAge = () => Math.max(...SCHOOL_DEPTS.map(s=>s.max));
+
 const SOK_F = [[1948,1],[1954,2],[1958,3],[1962,4],[1968,5],[1973,6],[9999,7]];
 const SOK_M = [[1955,1],[1967,2],[9999,3]];
-const SOK_MIN_AGE = 30;   /* 3남·7여선교회 최저 나이(현재 나이). 이보다 어리면 속 미지정 */
 function sokOf(m){
   const memo = m.memo || "";
   let t = memo.match(/([0-9])\s*여선교회/); if(t) return {g:"여", n:Number(t[1])};
@@ -249,13 +258,19 @@ function sokOf(m){
   const y = m.birth ? Number(m.birth.slice(0,4)) : 0;
   if(y){
     const ka = koAge(m.birth);
-    if(ka !== null && ka < SOK_MIN_AGE) return null;   /* 30세 미만은 속 편성 제외 */
+    if(ka !== null && ka <= schoolMaxAge()) return null;   /* 교회학교(유치부~청년부) 대상은 속 편성 제외 */
     if(m.gender==="여"){ for(const p of SOK_F){ if(y<=p[0]) return {g:"여", n:p[1]}; } }
     if(m.gender==="남"){ for(const p of SOK_M){ if(y<=p[0]) return {g:"남", n:p[1]}; } }
   }
   return null;
 }
 const sokLabel = s => `${s.g}자 ${s.n}속 (${s.n}${s.g}선교회)`;
+/* 현재 나이로 교회학교 부서 찾기 */
+const schoolDeptOf = m => {
+  const a = koAge(m.birth);
+  if(a === null) return null;
+  return SCHOOL_DEPTS.find(s => a >= s.min && a <= s.max) || null;
+};
 
 const ROLE_LABEL = {admin:"관리자", editor:"수정 가능", viewer:"열람만", pending:"승인 대기"};
 
@@ -897,12 +912,7 @@ function MemberList({members, setMemView, canEdit}){
     }));
   }, [list]);
 
-  const SCHOOL = [
-    {key:"kinder", label:"유치부 (5~7세)", min:5, max:7},
-    {key:"child", label:"아동부 (8~13세)", min:8, max:13},
-    {key:"youth", label:"중고등부 (14~19세)", min:14, max:19},
-    {key:"young", label:"청년부 (20~29세)", min:20, max:29},
-  ];
+  const SCHOOL = SCHOOL_DEPTS;
   const schoolGroups = useMemo(()=>{
     return SCHOOL.map(s=>({
       key:s.key, label:s.label,
@@ -1276,6 +1286,38 @@ function Attendance({members, att, saveAtt, canEdit}){
   const list = members.filter(m=>!q || m.name.includes(q)).sort(koSort);
   const recent = Object.keys(att).filter(d=>(att[d][svc]||[]).length).sort().reverse().slice(0,8);
 
+  /* 속별 · 교회학교 부서별 편성 */
+  const groups = useMemo(()=>{
+    const map = {}, order = [];
+    const bucket = (key, label) => {
+      if(!map[key]){ map[key] = {key, label, items:[]}; order.push(key); }
+      return map[key];
+    };
+    ["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7"].forEach(k=>
+      bucket(k, sokLabel({g:k[0], n:Number(k[1])})));
+    SCHOOL_DEPTS.forEach(s => bucket("S_"+s.key, "교회학교 · "+s.label));
+    bucket("zz", "편성 없음");
+
+    list.forEach(m=>{
+      const s = sokOf(m);
+      if(s){ bucket(s.g+s.n, sokLabel(s)).items.push(m); return; }
+      const d = schoolDeptOf(m);
+      if(d){ map["S_"+d.key].items.push(m); return; }
+      map["zz"].items.push(m);
+    });
+    return order.map(k=>map[k]).filter(g=>g.items.length);
+  }, [list]);
+
+  const toggleGroup = g => {
+    if(!canEdit) return;
+    const ids = g.items.map(m=>m.id);
+    const allOn = ids.every(id=>checked.includes(id));
+    saveAtt(date, svc, allOn ? checked.filter(id=>!ids.includes(id))
+                             : [...checked, ...ids.filter(id=>!checked.includes(id))]);
+  };
+  const gTitle = {margin:0, fontSize:"16px", color:"var(--pine-deep)",
+    borderBottom:"2px solid var(--gold)", display:"inline-block", paddingBottom:"2px"};
+
   return (
     <div>
       <div className="panel">
@@ -1297,17 +1339,31 @@ function Attendance({members, att, saveAtt, canEdit}){
         </div>
 
         {members.length===0 ? <p className="empty">먼저 교인을 등록해 주세요.</p> :
-          <div className="att-list">
-            {list.map(m=>{
-              const on = checked.includes(m.id);
-              return (
-                <button key={m.id} className={"att-item"+(on?" on":"")} onClick={()=>toggle(m.id)}
-                  aria-pressed={on}>
-                  <span className="mark">{on?"✓":""}</span>
-                  <span>{m.name} <span className="muted small">{m.position}</span></span>
-                </button>);
-            })}
-          </div>}
+         groups.length===0 ? <p className="empty">이름에 '{q}'이(가) 들어가는 교인이 없습니다.</p> :
+          groups.map(g=>{
+            const onCount = g.items.filter(m=>checked.includes(m.id)).length;
+            const allOn = onCount === g.items.length;
+            return (
+              <div key={g.key} style={{marginTop:18}}>
+                <div className="row" style={{alignItems:"baseline",gap:10}}>
+                  <h3 style={gTitle}>{g.label}</h3>
+                  <span className="muted small">{onCount} / {g.items.length}명</span>
+                  {canEdit && <button className="btn sm ghost" style={{marginLeft:"auto"}}
+                    onClick={()=>toggleGroup(g)}>{allOn ? "전체 해제" : "전체 체크"}</button>}
+                </div>
+                <div className="att-list" style={{marginTop:8}}>
+                  {g.items.map(m=>{
+                    const on = checked.includes(m.id);
+                    return (
+                      <button key={m.id} className={"att-item"+(on?" on":"")} onClick={()=>toggle(m.id)}
+                        aria-pressed={on}>
+                        <span className="mark">{on?"✓":""}</span>
+                        <span>{m.name} <span className="muted small">{m.position}</span></span>
+                      </button>);
+                  })}
+                </div>
+              </div>);
+          })}
         <p className="muted small" style={{marginTop:14,marginBottom:0}}>{canEdit ? "이름을 누르면 출석/해제가 되고, 체크 즉시 서버에 저장됩니다." : "열람 권한으로 접속 중입니다. 출석 체크는 수정 권한이 있는 분만 할 수 있습니다."}</p>
       </div>
 
