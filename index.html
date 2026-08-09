@@ -241,12 +241,15 @@ const RELATIONS = ["남편","아내","배우자","아들","딸","며느리","사
 /* 속회(선교회) 배정: 메모의 선교회 기록 우선, 없으면 성별+출생연도로 자동 */
 const SOK_F = [[1948,1],[1954,2],[1958,3],[1962,4],[1968,5],[1973,6],[9999,7]];
 const SOK_M = [[1955,1],[1967,2],[9999,3]];
+const SOK_MIN_AGE = 30;   /* 3남·7여선교회 최저 나이(현재 나이). 이보다 어리면 속 미지정 */
 function sokOf(m){
   const memo = m.memo || "";
   let t = memo.match(/([0-9])\s*여선교회/); if(t) return {g:"여", n:Number(t[1])};
   t = memo.match(/([0-9])\s*남선교회/); if(t) return {g:"남", n:Number(t[1])};
   const y = m.birth ? Number(m.birth.slice(0,4)) : 0;
   if(y){
+    const ka = koAge(m.birth);
+    if(ka !== null && ka < SOK_MIN_AGE) return null;   /* 30세 미만은 속 편성 제외 */
     if(m.gender==="여"){ for(const p of SOK_F){ if(y<=p[0]) return {g:"여", n:p[1]}; } }
     if(m.gender==="남"){ for(const p of SOK_M){ if(y<=p[0]) return {g:"남", n:p[1]}; } }
   }
