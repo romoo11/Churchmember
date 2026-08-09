@@ -207,6 +207,12 @@ const lastWeekday = (dow) => {
   d.setDate(d.getDate() - diff);
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 };
+const koAge = birth => {
+  if (!birth) return null;
+  const y = parseInt(String(birth).slice(0,4), 10);
+  if (!y) return null;
+  return new Date().getFullYear() - y + 1;
+};
 const calcAge = birth => {
   if (!birth) return null;
   const b = new Date(birth + "T00:00:00"); if (isNaN(b)) return null;
@@ -230,7 +236,7 @@ const SERVICES = [
 ];
 const POSITIONS = ["담임목사","부목사","전도사","원로 장로","장로","원로 권사","권사","원로 집사","안수집사","집사","성도","청년","학생","새가족"];
 const PURPOSES = ["정기심방","새가족심방","환우심방","경조사","상담","전도","기도","기타"];
-const RELATIONS = ["남편","아내","배우자","아들","딸","며느리","사위","손자","손녀","외손자","외손녀","조카","아버지","어머니","형제","자매","기타"];
+const RELATIONS = ["남편","아내","배우자","아들","딸","며느리","사위","손자","손녀","외손자","외손녀","조카","아버지","어머니","할아버지","할머니","형","오빠","누나","언니","남동생","여동생","형제","자매","삼촌","고모","이모","외삼촌","기타"];
 
 /* 속회(선교회) 배정: 메모의 선교회 기록 우선, 없으면 성별+출생연도로 자동 */
 const SOK_F = [[1948,1],[1954,2],[1958,3],[1962,4],[1968,5],[1973,6],[9999,7]];
@@ -898,7 +904,7 @@ function MemberList({members, setMemView, canEdit}){
     return SCHOOL.map(s=>({
       key:s.key, label:s.label,
       items: list.filter(m=>{
-        const a = calcAge(m.birth);
+        const a = koAge(m.birth);
         return a!==null && a>=s.min && a<=s.max;
       })
     }));
