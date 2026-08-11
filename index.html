@@ -544,6 +544,22 @@ function App({sb, profile, logout}){
   const myMembers = isLeader
     ? members.filter(m => myScopes.some(k => inScope(m, k)))
     : members;
+  /* 속장·교사가 담당 범위 밖이라도 볼 수 있는 사람: 담당 교인과 가족으로 이어진 분 (한 다리까지) */
+  const viewMembers = useMemo(()=>{
+    if(!isLeader) return members;
+    const mine = myMembers;
+    const mineIds = new Set(mine.map(x=>x.id));
+    const nm = s => (s||"").trim();
+    const famNames = new Set();
+    mine.forEach(x => (x.family||[]).forEach(f => { if(nm(f.name)) famNames.add(nm(f.name)); }));
+    const myNames = new Set(mine.map(x=>nm(x.name)).filter(Boolean));
+    const extra = members.filter(x =>
+      !mineIds.has(x.id) && (
+        famNames.has(nm(x.name)) ||                                   /* 담당 교인의 가족란에 있는 분 */
+        (x.family||[]).some(f => myNames.has(nm(f.name)))             /* 그분의 가족란에 담당 교인이 있는 경우 */
+      ));
+    return [...mine, ...extra];
+  }, [isLeader, members, myMembers]);
 
   const fail = e => setErr("저장/불러오기에 실패했습니다 — 원인: " + errMsg(e) + " · 이 문구를 Claude에게 보여주시면 해결할 수 있습니다.");
 
@@ -689,7 +705,7 @@ function App({sb, profile, logout}){
   const byId = id => members.find(m => m.id === id);
   const go = v => { setView(v); if(v==="members") setMemView({mode:"list"}); window.scrollTo(0,0); };
   const openMember = id => {
-    if(isLeader && !myMembers.some(m=>m.id===id)) return;
+    if(isLeader && !viewMembers.some(m=>m.id===id)) return;
     setView("members"); setMemView({mode:"detail", id}); window.scrollTo(0,0);
   };
 
@@ -753,8 +769,9 @@ function App({sb, profile, logout}){
           memView.mode==="form" ? <MemberForm init={memView.id ? byId(memView.id) : null}
               onCancel={()=>setMemView(memView.id ? {mode:"detail", id:memView.id} : {mode:"list"})}
               onSave={(m)=>{ saveMemberRow(m); setMemView({mode:"detail", id:m.id}); }}/> :
-          <MemberDetail m={(isLeader ? myMembers : members).find(x=>x.id===memView.id)} att={att} setMemView={setMemView} canEdit={canEdit}
-            allMembers={isLeader ? myMembers : members} openMember={openMember}
+          <MemberDetail m={viewMembers.find(x=>x.id===memView.id)} att={att} setMemView={setMemView} canEdit={canEdit}
+            allMembers={viewMembers} openMember={openMember} limited={isLeader}
+            outside={isLeader && !myMembers.some(x=>x.id===memView.id)}
             update={fn=>updateMember(memView.id, fn)}
             remove={()=>{
               const m = byId(memView.id);
@@ -1002,6 +1019,8 @@ function MemberList({members, setMemView, canEdit}){
     const map = {};
     list.forEach(m=>{
       const s = sokOf(m);
+      /* 교회학교(유치부~청년부) 대상은 속별 명부에 나오지 않음 */
+      if(!s && schoolDeptOf(m)) return;
       const key = s ? s.g + s.n : "zz";
       if(!map[key]) map[key] = {s:s, items:[]};
       map[key].items.push(m);
@@ -1205,7 +1224,7 @@ function MemberForm({init, onSave, onCancel}){
 }
 
 /* ───────── 교인 상세 ───────── */
-function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, openMember}){
+function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, openMember, limited, outside}){
   const [vWhen, setVWhen] = useState(nowLocal());
   const [vPurpose, setVPurpose] = useState("정기심방");
   const [vNote, setVNote] = useState("");
@@ -1251,6 +1270,10 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, 
             {m.memo && <tr><th>메모</th><td style={{whiteSpace:"pre-wrap"}}>{m.memo}</td></tr>}
           </tbody></table></div>
       </div>
+
+      {outside && <div className="panel" style={{padding:"12px 16px"}}>
+        <span className="muted small">담당 범위 밖의 교인입니다 — <b>가족으로 이어져</b> 열람 중입니다.</span>
+      </div>}
 
       <div className="panel">
         <h2>가족</h2>
@@ -1305,7 +1328,7 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, 
         <p className="muted small" style={{marginBottom:0}}>출석 체크는 상단 <b>출석</b> 메뉴에서 예배별로 진행합니다.</p>
       </div>
 
-      <div className="panel">
+      {!limited && <div className="panel">
         <h2>심방 기록 <span className="muted small">{(m.visits||[]).length}건</span></h2>
         {(m.visits||[]).length>0 &&
           <div className="tbl-wrap"><table>
@@ -1336,9 +1359,9 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, 
           }}>기록 추가</button>
         </div>
         </React.Fragment>}
-      </div>
+      </div>}
 
-      <div className="panel">
+      {!limited && <div className="panel">
         <h2>중보기도 <span className="muted small">{(m.prayers||[]).length}건</span></h2>
         {(m.prayers||[]).length>0 &&
           <div className="tbl-wrap"><table>
@@ -1375,7 +1398,7 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, 
           }}>추가</button>
         </div>
         </React.Fragment>}
-      </div>
+      </div>}
     </div>
   );
 }
