@@ -275,11 +275,26 @@ const scopeKeyOf = m => {
   return "zz";
 };
 const SCOPE_LIST = () => [
+  ["SOK_ALL", "속 전체 (남·여 모든 속)"],
   ...["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7"]
       .map(k=>[k, sokLabel({g:k[0], n:Number(k[1])})]),
+  ["S_ALL", "교회학교 전체 (유치부~청년부)"],
   ...SCHOOL_DEPTS.map(s=>["S_"+s.key, "교회학교 · "+s.label]),
 ];
 const scopeLabel = k => { const f = SCOPE_LIST().find(x=>x[0]===k); return f ? f[1] : "편성 없음"; };
+/* 한 사람의 담당 목록 (예전 방식인 문자열 하나도 그대로 읽힘) */
+const scopesOf = (leaders, id) => {
+  const v = (leaders||{})[id];
+  if(!v) return [];
+  return Array.isArray(v) ? v.filter(Boolean) : [v];
+};
+/* 담당 범위에 드는 사람인지 */
+const inScope = (m, k) => {
+  const sk = scopeKeyOf(m);
+  if(k === "SOK_ALL") return sk !== "zz" && sk.indexOf("S_") !== 0;   /* 속에 편성된 사람 전부 */
+  if(k === "S_ALL")   return sk.indexOf("S_") === 0;                  /* 교회학교 전부 */
+  return sk === k;
+};
 
 const schoolDeptOf = m => {
   const a = koAge(m.birth);
@@ -521,12 +536,14 @@ function App({sb, profile, logout}){
   const fileRef = useRef(null);
   const [leaders, setLeaders] = useState({});   /* {사용자ID: "여3"} 담당 속 */
   const isAdmin = profile.role === "admin";
-  const myScope = leaders[profile.id] || "";
-  const isLeader = !isAdmin && !!myScope;                       /* 속장 */
+  const myScopes = scopesOf(leaders, profile.id);
+  const isLeader = !isAdmin && myScopes.length > 0;             /* 속장 · 교회학교 교사 */
   const canEdit = !isLeader && (profile.role === "admin" || profile.role === "editor");
   const canCheckAtt = canEdit || isLeader;                      /* 출석 체크 가능 */
   /* 속장은 자기 속(또는 담당 부서) 사람만 보임 */
-  const myMembers = isLeader ? members.filter(m => scopeKeyOf(m) === myScope) : members;
+  const myMembers = isLeader
+    ? members.filter(m => myScopes.some(k => inScope(m, k)))
+    : members;
 
   const fail = e => setErr("저장/불러오기에 실패했습니다 — 원인: " + errMsg(e) + " · 이 문구를 Claude에게 보여주시면 해결할 수 있습니다.");
 
@@ -677,7 +694,10 @@ function App({sb, profile, logout}){
   };
 
   const navItems = isLeader
-    ? [["home","대문"],["members","우리 속 교인"],["att","출석 체크"]]
+    ? [["home","대문"],
+       ["members", myScopes.every(k=>k.indexOf("S_")===0) ? "우리 부서"
+                 : myScopes.some(k=>k.indexOf("S_")===0) ? "담당 교인" : "우리 속 교인"],
+       ["att","출석 체크"]]
     : [["home","대문"],["members","교인"],["att","출석"],["visit","심방"],["pray","중보기도"]];
   if(isAdmin) navItems.push(["team","사용자"]);
 
@@ -724,8 +744,8 @@ function App({sb, profile, logout}){
         {err && <div className="err-banner">{err} <button className="btn sm ghost" onClick={loadAll}>다시 불러오기</button></div>}
         {!loaded ? <div className="panel empty">기록을 불러오는 중…</div> : <React.Fragment>
         {isLeader && <div className="panel" style={{padding:"12px 16px",marginBottom:12}}>
-          <b>{scopeLabel(myScope)}</b> 속장으로 접속 중입니다.
-          <span className="muted small"> · 우리 속 {myMembers.length}명의 신상을 보고 출석을 체크하실 수 있습니다.</span>
+          <b>{myScopes.map(scopeLabel).join(" · ")}</b> 담당으로 접속 중입니다.
+          <span className="muted small"> · {myMembers.length}명의 신상을 보고 출석을 체크하실 수 있습니다.</span>
         </div>}
         {view==="home" && <Home churchName={churchName} members={myMembers} att={att} go={go} openMember={openMember}/>}
         {view==="members" && (
@@ -780,7 +800,9 @@ function Team({sb, me, leaders, saveLeaders}){
         <p className="small muted">여기 보이는 사람은 <b>이 교인관리 프로그램에 직접 들어와 본 사람</b>뿐입니다(회계 프로그램 가입자는 섞이지 않습니다).
           가입 신청한 사람 중 <b>믿을 수 있는 분만 승인</b>해 주세요. <b>열람 허용</b>은 보기만, <b>수정 허용</b>은 등록·수정까지 가능합니다.
           속장님은 출석을 저장해야 하므로 <b>수정 허용</b>으로 승인한 뒤, 아래 표에서 <b>담당 속</b>을 정해 주세요.
-          담당 속이 정해지면 교인 신상은 보기만 되고 고칠 수는 없게 됩니다.</p>
+          담당이 정해지면 교인 신상은 보기만 되고 고칠 수는 없게 됩니다.
+          <b>속 전체</b>는 어른 속 전부, <b>교회학교 전체</b>는 유치부~청년부 전부를 볼 수 있어 속회장·교회학교 부장께 알맞습니다.
+          한 사람에게 <b>여러 담당</b>을 줄 수도 있습니다(예: 중고등부 + 여자 7속). 그러면 두 곳 사람이 모두 보입니다.</p>
         {err && <div className="err-banner">{err}</div>}
         {rows===null ? <p className="empty">불러오는 중…</p> :
          pending.length===0 ? <p className="empty">승인을 기다리는 사람이 없습니다.</p> :
@@ -811,17 +833,35 @@ function Team({sb, me, leaders, saveLeaders}){
                 <td>{r.name || <span className="muted">이름 없음</span>}{r.id===me.id && " (나)"}</td>
                 <td>{r.email}</td>
                 <td><span className={"chip "+r.role}>{ROLE_LABEL[r.role]||r.role}</span>
-                  {(leaders||{})[r.id] && r.role!=="admin" && <span className="chip editor" style={{marginLeft:4}}>속장</span>}</td>
+                  {scopesOf(leaders, r.id).length>0 && r.role!=="admin" && <span className="chip editor" style={{marginLeft:4}}>속장·교사</span>}</td>
                 <td>
                   {r.role==="admin" ? <span className="muted small">관리자는 전체를 봅니다</span> :
-                    <select value={(leaders||{})[r.id] || ""} onChange={e=>{
-                      const next = {...(leaders||{})};
-                      if(e.target.value) next[r.id] = e.target.value; else delete next[r.id];
-                      saveLeaders(next);
-                    }}>
-                      <option value="">없음 (전체 보기)</option>
-                      {SCOPE_LIST().map(([k,l])=><option key={k} value={k}>{l}</option>)}
-                    </select>}
+                    <React.Fragment>
+                      {scopesOf(leaders, r.id).map(k=>(
+                        <span key={k} className="chip editor" style={{marginRight:4, marginBottom:4, display:"inline-block"}}>
+                          {scopeLabel(k)}{" "}
+                          <button className="btn sm ghost" style={{padding:"0 6px", marginLeft:2}}
+                            title="이 담당 빼기"
+                            onClick={()=>{
+                              const next = {...(leaders||{})};
+                              const left = scopesOf(leaders, r.id).filter(x=>x!==k);
+                              if(left.length) next[r.id] = left; else delete next[r.id];
+                              saveLeaders(next);
+                            }}>✕</button>
+                        </span>))}
+                      <select value="" onChange={e=>{
+                        if(!e.target.value) return;
+                        const cur = scopesOf(leaders, r.id);
+                        if(cur.includes(e.target.value)) return;
+                        saveLeaders({...(leaders||{}), [r.id]: [...cur, e.target.value]});
+                      }}>
+                        <option value="">＋ 담당 추가…</option>
+                        {SCOPE_LIST().filter(([k])=>!scopesOf(leaders, r.id).includes(k))
+                          .map(([k,l])=><option key={k} value={k}>{l}</option>)}
+                      </select>
+                      {scopesOf(leaders, r.id).length===0 &&
+                        <div className="muted small">담당 없음 — 전체를 봅니다</div>}
+                    </React.Fragment>}
                 </td>
                 <td style={{whiteSpace:"nowrap"}}>
                   {r.id!==me.id && <React.Fragment>
