@@ -485,9 +485,13 @@ function Root(){
 
   const loadProfile = useCallback(async ()=>{
     if(!sb || !session){ setProfile(undefined); return; }
-    const {data, error} = await sb.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
-    if(error || !data) setProfile({id:session.user.id, email:session.user.email, name:"", role:"pending", missing:true});
-    else setProfile(data);
+    const {data} = await sb.from("church_profiles").select("*").eq("id", session.user.id).maybeSingle();
+    if(data){ setProfile(data); return; }
+    /* 이 프로그램에 처음 들어온 사람 → 승인 대기로 등록 (회계 프로그램 가입자와 섞이지 않음) */
+    const nm = (session.user.user_metadata && session.user.user_metadata.name) || "";
+    await sb.from("church_profiles").insert({id:session.user.id, email:session.user.email, name:nm, role:"pending"});
+    const again = await sb.from("church_profiles").select("*").eq("id", session.user.id).maybeSingle();
+    setProfile(again.data || {id:session.user.id, email:session.user.email, name:nm, role:"pending", missing:true});
   }, [sb, session]);
 
   useEffect(()=>{ if(session) loadProfile(); }, [session, loadProfile]);
@@ -756,13 +760,13 @@ function Team({sb, me, leaders, saveLeaders}){
   const [err, setErr] = useState("");
 
   const load = useCallback(async ()=>{
-    const {data, error} = await sb.from("profiles").select("*").order("created_at");
+    const {data, error} = await sb.from("church_profiles").select("*").order("created_at");
     if(error) setErr(errMsg(error)); else { setRows(data||[]); setErr(""); }
   }, [sb]);
   useEffect(()=>{ load(); }, [load]);
 
   const setRole = async (id, role) => {
-    const {error} = await sb.from("profiles").update({role}).eq("id", id);
+    const {error} = await sb.from("church_profiles").update({role}).eq("id", id);
     if(error) setErr(errMsg(error)); else load();
   };
 
@@ -773,7 +777,8 @@ function Team({sb, me, leaders, saveLeaders}){
     <div>
       <div className="panel">
         <h2>승인 대기 <span className="muted small">{pending.length}명</span></h2>
-        <p className="small muted">가입 신청한 사람 중 <b>믿을 수 있는 분만 승인</b>해 주세요. <b>열람 허용</b>은 보기만, <b>수정 허용</b>은 등록·수정까지 가능합니다.
+        <p className="small muted">여기 보이는 사람은 <b>이 교인관리 프로그램에 직접 들어와 본 사람</b>뿐입니다(회계 프로그램 가입자는 섞이지 않습니다).
+          가입 신청한 사람 중 <b>믿을 수 있는 분만 승인</b>해 주세요. <b>열람 허용</b>은 보기만, <b>수정 허용</b>은 등록·수정까지 가능합니다.
           속장님은 출석을 저장해야 하므로 <b>수정 허용</b>으로 승인한 뒤, 아래 표에서 <b>담당 속</b>을 정해 주세요.
           담당 속이 정해지면 교인 신상은 보기만 되고 고칠 수는 없게 됩니다.</p>
         {err && <div className="err-banner">{err}</div>}
