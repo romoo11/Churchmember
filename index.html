@@ -266,6 +266,21 @@ function sokOf(m){
 }
 const sokLabel = s => `${s.g}자 ${s.n}속 (${s.n}${s.g}선교회)`;
 /* 현재 나이로 교회학교 부서 찾기 */
+/* 한 사람이 속한 편성 구분: 남1~3, 여1~7, 교회학교 부서, 그 외 */
+const scopeKeyOf = m => {
+  const s = sokOf(m);
+  if(s) return s.g + s.n;
+  const d = schoolDeptOf(m);
+  if(d) return "S_" + d.key;
+  return "zz";
+};
+const SCOPE_LIST = () => [
+  ...["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7"]
+      .map(k=>[k, sokLabel({g:k[0], n:Number(k[1])})]),
+  ...SCHOOL_DEPTS.map(s=>["S_"+s.key, "교회학교 · "+s.label]),
+];
+const scopeLabel = k => { const f = SCOPE_LIST().find(x=>x[0]===k); return f ? f[1] : "편성 없음"; };
+
 const schoolDeptOf = m => {
   const a = koAge(m.birth);
   if(a === null) return null;
@@ -500,8 +515,14 @@ function App({sb, profile, logout}){
   const [view, setView] = useState("home");
   const [memView, setMemView] = useState({mode:"list"});
   const fileRef = useRef(null);
+  const [leaders, setLeaders] = useState({});   /* {사용자ID: "여3"} 담당 속 */
   const isAdmin = profile.role === "admin";
-  const canEdit = profile.role === "admin" || profile.role === "editor";
+  const myScope = leaders[profile.id] || "";
+  const isLeader = !isAdmin && !!myScope;                       /* 속장 */
+  const canEdit = !isLeader && (profile.role === "admin" || profile.role === "editor");
+  const canCheckAtt = canEdit || isLeader;                      /* 출석 체크 가능 */
+  /* 속장은 자기 속(또는 담당 부서) 사람만 보임 */
+  const myMembers = isLeader ? members.filter(m => scopeKeyOf(m) === myScope) : members;
 
   const fail = e => setErr("저장/불러오기에 실패했습니다 — 원인: " + errMsg(e) + " · 이 문구를 Claude에게 보여주시면 해결할 수 있습니다.");
 
@@ -521,6 +542,9 @@ function App({sb, profile, logout}){
     if(!s.error){
       const cn = (s.data||[]).find(r=>r.key==="churchName");
       if(cn && cn.value) setChurchName(cn.value);
+      const ld = (s.data||[]).find(r=>r.key==="leaders");
+      if(ld && ld.value){ try{ setLeaders(JSON.parse(ld.value)||{}); }catch(_){ setLeaders({}); } }
+      else setLeaders({});
     }
     setLoaded(true);
   }, [sb]);
@@ -635,11 +659,22 @@ function App({sb, profile, logout}){
     alert(mode === "merge" ? "명단을 합쳐 넣었습니다." : "가져오기(전체 교체)가 완료되었습니다.");
   };
 
+  const saveLeaders = async (next) => {
+    setLeaders(next);
+    const {error} = await sb.from("church_settings").upsert({key:"leaders", value:JSON.stringify(next)});
+    if(error){ fail(error); loadAll(); }
+  };
+
   const byId = id => members.find(m => m.id === id);
   const go = v => { setView(v); if(v==="members") setMemView({mode:"list"}); window.scrollTo(0,0); };
-  const openMember = id => { setView("members"); setMemView({mode:"detail", id}); window.scrollTo(0,0); };
+  const openMember = id => {
+    if(isLeader && !myMembers.some(m=>m.id===id)) return;
+    setView("members"); setMemView({mode:"detail", id}); window.scrollTo(0,0);
+  };
 
-  const navItems = [["home","대문"],["members","교인"],["att","출석"],["visit","심방"],["pray","중보기도"]];
+  const navItems = isLeader
+    ? [["home","대문"],["members","우리 속 교인"],["att","출석 체크"]]
+    : [["home","대문"],["members","교인"],["att","출석"],["visit","심방"],["pray","중보기도"]];
   if(isAdmin) navItems.push(["team","사용자"]);
 
   return (
@@ -672,7 +707,7 @@ function App({sb, profile, logout}){
           </nav>
           <div className="row" style={{gap:6}}>
             <button className="backup-btn" onClick={loadAll} title="다른 사람이 입력한 내용 반영">새로고침</button>
-            {canEdit && <button className="backup-btn" onClick={doExport}>백업</button>}
+            {canEdit && !isLeader && <button className="backup-btn" onClick={doExport}>백업</button>}
             {isAdmin && <button className="backup-btn" onClick={()=>fileRef.current.click()}>가져오기</button>}
             <button className="backup-btn" onClick={logout}>{profile.name || "나"} · 로그아웃</button>
             <input ref={fileRef} type="file" accept=".json,application/json" style={{display:"none"}}
@@ -684,13 +719,17 @@ function App({sb, profile, logout}){
       <div className="wrap">
         {err && <div className="err-banner">{err} <button className="btn sm ghost" onClick={loadAll}>다시 불러오기</button></div>}
         {!loaded ? <div className="panel empty">기록을 불러오는 중…</div> : <React.Fragment>
-        {view==="home" && <Home churchName={churchName} members={members} att={att} go={go} openMember={openMember}/>}
+        {isLeader && <div className="panel" style={{padding:"12px 16px",marginBottom:12}}>
+          <b>{scopeLabel(myScope)}</b> 속장으로 접속 중입니다.
+          <span className="muted small"> · 우리 속 {myMembers.length}명의 신상을 보고 출석을 체크하실 수 있습니다.</span>
+        </div>}
+        {view==="home" && <Home churchName={churchName} members={myMembers} att={att} go={go} openMember={openMember}/>}
         {view==="members" && (
-          memView.mode==="list" ? <MemberList members={members} setMemView={setMemView} canEdit={canEdit}/> :
+          memView.mode==="list" ? <MemberList members={myMembers} setMemView={setMemView} canEdit={canEdit}/> :
           memView.mode==="form" ? <MemberForm init={memView.id ? byId(memView.id) : null}
               onCancel={()=>setMemView(memView.id ? {mode:"detail", id:memView.id} : {mode:"list"})}
               onSave={(m)=>{ saveMemberRow(m); setMemView({mode:"detail", id:m.id}); }}/> :
-          <MemberDetail m={byId(memView.id)} att={att} setMemView={setMemView} canEdit={canEdit}
+          <MemberDetail m={(isLeader ? myMembers : members).find(x=>x.id===memView.id)} att={att} setMemView={setMemView} canEdit={canEdit}
             update={fn=>updateMember(memView.id, fn)}
             remove={()=>{
               const m = byId(memView.id);
@@ -700,10 +739,11 @@ function App({sb, profile, logout}){
               }
             }}/>
         )}
-        {view==="att" && <Attendance members={members} att={att} saveAtt={saveAtt} canEdit={canEdit}/>}
+        {view==="att" && <Attendance members={myMembers} att={att} saveAtt={saveAtt} canEdit={canCheckAtt}/>}
         {view==="visit" && <Visits members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>}
         {view==="pray" && <Prayers members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>}
-        {view==="team" && isAdmin && <Team sb={sb} me={profile}/>}
+        {view==="visit" && isLeader && <p className="empty">심방 기록은 목회자와 관리자만 볼 수 있습니다.</p>}
+        {view==="team" && isAdmin && <Team sb={sb} me={profile} leaders={leaders} saveLeaders={saveLeaders}/>}
         </React.Fragment>}
       </div>
     </div>
@@ -711,7 +751,7 @@ function App({sb, profile, logout}){
 }
 
 /* ───────── 사용자(승인) 관리 ───────── */
-function Team({sb, me}){
+function Team({sb, me, leaders, saveLeaders}){
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
 
@@ -733,7 +773,9 @@ function Team({sb, me}){
     <div>
       <div className="panel">
         <h2>승인 대기 <span className="muted small">{pending.length}명</span></h2>
-        <p className="small muted">가입 신청한 사람 중 <b>믿을 수 있는 분만 승인</b>해 주세요. <b>열람 허용</b>은 보기만, <b>수정 허용</b>은 등록·수정까지 가능합니다.</p>
+        <p className="small muted">가입 신청한 사람 중 <b>믿을 수 있는 분만 승인</b>해 주세요. <b>열람 허용</b>은 보기만, <b>수정 허용</b>은 등록·수정까지 가능합니다.
+          속장님은 출석을 저장해야 하므로 <b>수정 허용</b>으로 승인한 뒤, 아래 표에서 <b>담당 속</b>을 정해 주세요.
+          담당 속이 정해지면 교인 신상은 보기만 되고 고칠 수는 없게 됩니다.</p>
         {err && <div className="err-banner">{err}</div>}
         {rows===null ? <p className="empty">불러오는 중…</p> :
          pending.length===0 ? <p className="empty">승인을 기다리는 사람이 없습니다.</p> :
@@ -754,14 +796,28 @@ function Team({sb, me}){
 
       <div className="panel">
         <h2>사용 중인 구성원 <span className="muted small">{active.length}명</span></h2>
+        <p className="small muted"><b>담당 속</b>을 정해 주면 그분은 <b>속장</b>이 되어, 자기 속 교인의 신상 보기와 출석 체크만 할 수 있습니다.
+          (다른 속 명단·심방·중보기도는 보이지 않습니다.) 담당 속을 <b>없음</b>으로 되돌리면 원래 권한으로 돌아갑니다.</p>
         {rows!==null &&
           <div className="tbl-wrap"><table>
-            <thead><tr><th>이름</th><th>이메일</th><th>권한</th><th></th></tr></thead>
+            <thead><tr><th>이름</th><th>이메일</th><th>권한</th><th>담당 속(속장)</th><th></th></tr></thead>
             <tbody>{active.map(r=>(
               <tr key={r.id}>
                 <td>{r.name || <span className="muted">이름 없음</span>}{r.id===me.id && " (나)"}</td>
                 <td>{r.email}</td>
-                <td><span className={"chip "+r.role}>{ROLE_LABEL[r.role]||r.role}</span></td>
+                <td><span className={"chip "+r.role}>{ROLE_LABEL[r.role]||r.role}</span>
+                  {(leaders||{})[r.id] && r.role!=="admin" && <span className="chip editor" style={{marginLeft:4}}>속장</span>}</td>
+                <td>
+                  {r.role==="admin" ? <span className="muted small">관리자는 전체를 봅니다</span> :
+                    <select value={(leaders||{})[r.id] || ""} onChange={e=>{
+                      const next = {...(leaders||{})};
+                      if(e.target.value) next[r.id] = e.target.value; else delete next[r.id];
+                      saveLeaders(next);
+                    }}>
+                      <option value="">없음 (전체 보기)</option>
+                      {SCOPE_LIST().map(([k,l])=><option key={k} value={k}>{l}</option>)}
+                    </select>}
+                </td>
                 <td style={{whiteSpace:"nowrap"}}>
                   {r.id!==me.id && <React.Fragment>
                     {r.role!=="viewer" &&
