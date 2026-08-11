@@ -236,7 +236,7 @@ const SERVICES = [
 ];
 const POSITIONS = ["담임목사","부목사","전도사","원로 장로","장로","원로 권사","권사","원로 집사","안수집사","집사","성도","청년","학생","새가족"];
 const PURPOSES = ["정기심방","새가족심방","환우심방","경조사","상담","전도","기도","기타"];
-const RELATIONS = ["남편","아내","배우자","아들","딸","며느리","사위","손자","손녀","외손자","외손녀","조카","아버지","어머니","할아버지","할머니","형","오빠","누나","언니","남동생","여동생","형제","자매","삼촌","고모","이모","외삼촌","기타"];
+const RELATIONS = ["남편","아내","배우자","아들","딸","자녀","며느리","사위","손자","손녀","외손자","외손녀","조카","아버지","어머니","할아버지","할머니","형","오빠","누나","언니","남동생","여동생","형제","자매","삼촌","고모","이모","외삼촌","기타"];
 
 /* 속회(선교회) 배정: 메모의 선교회 기록 우선, 없으면 성별+출생연도로 자동 */
 /* 교회학교 부서 (현재 나이 기준). 이 나이대는 속별 명부에서 제외됨 */
@@ -754,6 +754,7 @@ function App({sb, profile, logout}){
               onCancel={()=>setMemView(memView.id ? {mode:"detail", id:memView.id} : {mode:"list"})}
               onSave={(m)=>{ saveMemberRow(m); setMemView({mode:"detail", id:m.id}); }}/> :
           <MemberDetail m={(isLeader ? myMembers : members).find(x=>x.id===memView.id)} att={att} setMemView={setMemView} canEdit={canEdit}
+            allMembers={isLeader ? myMembers : members} openMember={openMember}
             update={fn=>updateMember(memView.id, fn)}
             remove={()=>{
               const m = byId(memView.id);
@@ -1204,7 +1205,7 @@ function MemberForm({init, onSave, onCancel}){
 }
 
 /* ───────── 교인 상세 ───────── */
-function MemberDetail({m, att, setMemView, update, remove, canEdit}){
+function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, openMember}){
   const [vWhen, setVWhen] = useState(nowLocal());
   const [vPurpose, setVPurpose] = useState("정기심방");
   const [vNote, setVNote] = useState("");
@@ -1256,9 +1257,24 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit}){
         {(m.family||[]).length===0 ? <p className="empty">등록된 가족이 없습니다. '정보 수정'에서 추가할 수 있습니다.</p> :
           <div className="tbl-wrap"><table>
             <thead><tr><th>관계</th><th>이름</th><th>나이</th><th>직업 / 학교</th></tr></thead>
-            <tbody>{m.family.map(f=>(
-              <tr key={f.id}><td>{f.relation}</td><td>{f.name}</td><td>{f.age && `${f.age}세`}</td><td>{f.job}</td></tr>))}
+            <tbody>{m.family.map(f=>{
+              const nm = (f.name||"").trim();
+              const link = nm && (allMembers||[]).find(x => x.id!==m.id && (x.name||"").trim()===nm);
+              return (
+                <tr key={f.id}>
+                  <td>{f.relation}</td>
+                  <td>{link
+                    ? <button className="btn sm ghost" style={{padding:"2px 8px"}}
+                        title={nm + " 님의 교인 기록으로 이동"}
+                        onClick={()=>openMember(link.id)}>{nm} ↗</button>
+                    : nm}</td>
+                  <td>{f.age && (/^\d{1,3}$/.test(String(f.age)) ? f.age + "세" : f.age)}</td>
+                  <td>{f.job}</td>
+                </tr>);
+            })}
             </tbody></table></div>}
+        {(m.family||[]).length>0 &&
+          <p className="muted small" style={{marginBottom:0}}>이름 옆에 ↗ 표시가 있는 분은 교인으로 등록되어 있습니다. 눌러서 그분 기록으로 바로 넘어갈 수 있습니다.</p>}
       </div>
 
       <div className="panel">
