@@ -239,6 +239,12 @@ const PURPOSES = ["정기심방","새가족심방","환우심방","경조사","�
 const RELATIONS = ["남편","아내","배우자","아들","딸","자녀","며느리","사위","손자","손녀","외손자","외손녀","조카","아버지","어머니","할아버지","할머니","형","오빠","누나","언니","남동생","여동생","형제","자매","삼촌","고모","이모","외삼촌","기타"];
 
 /* 속회(선교회) 배정: 메모의 선교회 기록 우선, 없으면 성별+출생연도로 자동 */
+/* 교회학교 반 편성 기본값 — 화면에서 이름을 고치거나 반을 더할 수 있음 */
+const DEFAULT_CLASSES = {
+  child: ["번개반", "기도반", "키즈쉐프반"],
+};
+const uid2 = () => "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+
 /* 교회학교 부서 (현재 나이 기준). 이 나이대는 속별 명부에서 제외됨 */
 const SCHOOL_DEPTS = [
   {key:"kinder", label:"유치부 (5~7세)", min:5, max:7},
@@ -535,6 +541,8 @@ function App({sb, profile, logout}){
   const [memView, setMemView] = useState({mode:"list"});
   const fileRef = useRef(null);
   const [leaders, setLeaders] = useState({});   /* {사용자ID: "여3"} 담당 속 */
+  /* 교회학교 반: {부서키: {classes:[{id,name}], of:{교인ID:반ID}}} */
+  const [schoolClasses, setSchoolClasses] = useState({});
   const isAdmin = profile.role === "admin";
   const myScopes = scopesOf(leaders, profile.id);
   const isLeader = !isAdmin && myScopes.length > 0;             /* 속장 · 교회학교 교사 */
@@ -579,6 +587,8 @@ function App({sb, profile, logout}){
     if(!s.error){
       const cn = (s.data||[]).find(r=>r.key==="churchName");
       if(cn && cn.value) setChurchName(cn.value);
+      const sc = (s.data||[]).find(r=>r.key==="schoolClasses");
+      if(sc && sc.value){ try{ setSchoolClasses(JSON.parse(sc.value)||{}); }catch(_){ setSchoolClasses({}); } }
       const ld = (s.data||[]).find(r=>r.key==="leaders");
       if(ld && ld.value){ try{ setLeaders(JSON.parse(ld.value)||{}); }catch(_){ setLeaders({}); } }
       else setLeaders({});
@@ -696,6 +706,12 @@ function App({sb, profile, logout}){
     alert(mode === "merge" ? "명단을 합쳐 넣었습니다." : "가져오기(전체 교체)가 완료되었습니다.");
   };
 
+  const saveClasses = async (next) => {
+    setSchoolClasses(next);
+    const {error} = await sb.from("church_settings").upsert({key:"schoolClasses", value:JSON.stringify(next)});
+    if(error){ fail(error); loadAll(); }
+  };
+
   const saveLeaders = async (next) => {
     setLeaders(next);
     const {error} = await sb.from("church_settings").upsert({key:"leaders", value:JSON.stringify(next)});
@@ -765,7 +781,8 @@ function App({sb, profile, logout}){
         </div>}
         {view==="home" && <Home churchName={churchName} members={myMembers} att={att} go={go} openMember={openMember}/>}
         {view==="members" && (
-          memView.mode==="list" ? <MemberList members={myMembers} setMemView={setMemView} canEdit={canEdit}/> :
+          memView.mode==="list" ? <MemberList members={myMembers} setMemView={setMemView} canEdit={canEdit}
+            schoolClasses={schoolClasses} saveClasses={saveClasses}/> :
           memView.mode==="form" ? <MemberForm init={memView.id ? byId(memView.id) : null}
               onCancel={()=>setMemView(memView.id ? {mode:"detail", id:memView.id} : {mode:"list"})}
               onSave={(m)=>{ saveMemberRow(m); setMemView({mode:"detail", id:m.id}); }}/> :
@@ -781,7 +798,7 @@ function App({sb, profile, logout}){
               }
             }}/>
         )}
-        {view==="att" && <Attendance members={myMembers} att={att} saveAtt={saveAtt} canEdit={canCheckAtt}/>}
+        {view==="att" && <Attendance members={myMembers} att={att} saveAtt={saveAtt} canEdit={canCheckAtt} schoolClasses={schoolClasses}/>}
         {view==="visit" && <Visits members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>}
         {view==="pray" && <Prayers members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>}
         {view==="visit" && isLeader && <p className="empty">심방 기록은 목회자와 관리자만 볼 수 있습니다.</p>}
@@ -990,7 +1007,97 @@ function MemberCard({m, onClick}){
   );
 }
 
-function MemberList({members, setMemView, canEdit}){
+/* ── 교회학교 한 부서: 반 나누기 · 반 이름 고치기 · 아이 옮기기 ── */
+function SchoolDept({g, canEdit, setMemView, data, saveDept}){
+  const preset = DEFAULT_CLASSES[g.key] || [];
+  const classes = (data && data.classes) ? data.classes
+                : preset.map((n,i)=>({id:"c"+g.key+i, name:n}));
+  const of = (data && data.of) || {};
+  const [editing, setEditing] = useState(false);
+  const save = (classes2, of2) => saveDept({classes:classes2, of: of2 || of});
+
+  const bucket = {};
+  classes.forEach(c => bucket[c.id] = []);
+  const rest = [];
+  g.items.forEach(m => {
+    const cid = of[m.id];
+    if(cid && bucket[cid]) bucket[cid].push(m); else rest.push(m);
+  });
+  const gT = {margin:"0", fontSize:"17px", color:"var(--pine-deep)",
+    borderBottom:"2px solid var(--gold)", display:"inline-block", paddingBottom:"2px"};
+
+  const Row = ({title, items, cid}) => (
+    <div style={{marginBottom:14}}>
+      <div className="row" style={{alignItems:"center", gap:8}}>
+        {title}
+        <span className="muted small">{items.length}명</span>
+      </div>
+      {items.length===0
+        ? <p className="muted small" style={{margin:"6px 0 0"}}>아직 배정된 학생이 없습니다.</p>
+        : <div className="mem-list" style={{marginTop:8}}>
+            {items.map(m=>(
+              <div key={m.id}>
+                <MemberCard m={m} onClick={()=>setMemView({mode:"detail", id:m.id})}/>
+                {canEdit && classes.length>0 &&
+                  <div className="row" style={{margin:"4px 0 10px"}}>
+                    <span className="muted small">반</span>
+                    <select value={of[m.id]||""} onChange={e=>{
+                      const of2 = {...of};
+                      if(e.target.value) of2[m.id]=e.target.value; else delete of2[m.id];
+                      save(classes, of2);
+                    }}>
+                      <option value="">미배정</option>
+                      {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>}
+              </div>))}
+          </div>}
+    </div>
+  );
+
+  return (
+    <div style={{marginBottom:22}}>
+      <div className="row" style={{alignItems:"baseline", gap:10, marginBottom:10}}>
+        <h3 style={gT}>{g.label}</h3>
+        <span className="muted small">{g.items.length}명</span>
+        {canEdit && <button className="btn sm ghost" style={{marginLeft:"auto"}}
+          onClick={()=>setEditing(!editing)}>{editing ? "반 편집 닫기" : "반 편집"}</button>}
+      </div>
+
+      {editing && canEdit &&
+        <div className="panel" style={{padding:"12px 16px", marginBottom:12}}>
+          <p className="small muted" style={{marginTop:0}}>반 이름을 고치거나, 반을 더하고 뺄 수 있습니다.
+            반을 지우면 그 반 학생들은 <b>미배정</b>으로 돌아갑니다.</p>
+          {classes.map((c,i)=>(
+            <div className="row" key={c.id} style={{marginBottom:6}}>
+              <input value={c.name} onChange={e=>{
+                const cs=[...classes]; cs[i]={...c, name:e.target.value}; save(cs);
+              }} style={{flex:"1 1 160px"}}/>
+              <button className="btn sm ghost" onClick={()=>{
+                const of2={...of};
+                Object.keys(of2).forEach(k=>{ if(of2[k]===c.id) delete of2[k]; });
+                save(classes.filter(x=>x.id!==c.id), of2);
+              }}>지우기</button>
+            </div>))}
+          <button className="btn sm" onClick={()=>save([...classes, {id:uid2(), name:"새 반"}])}>+ 반 추가</button>
+        </div>}
+
+      {g.items.length===0
+        ? <p className="muted small" style={{margin:"0 0 8px"}}>해당 교인이 없습니다.</p>
+        : classes.length===0
+          ? <Row title={<span className="muted small">전체</span>} items={g.items} cid=""/>
+          : <React.Fragment>
+              {classes.map(c=>(
+                <Row key={c.id} cid={c.id} items={bucket[c.id]}
+                  title={<b style={{fontSize:"15px"}}>{c.name}</b>}/>
+              ))}
+              <Row cid="" items={rest} title={<b style={{fontSize:"15px", color:"var(--muted, #777)"}}>미배정</b>}/>
+            </React.Fragment>}
+    </div>
+  );
+}
+
+function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses}){
   const [book, setBook] = useState("all"); // all=교인 명부 | sok=속별 명부
   const [q, setQ] = useState("");
   const [pos, setPos] = useState("전체");
@@ -1078,16 +1185,8 @@ function MemberList({members, setMemView, canEdit}){
             <div className="panel empty">교회학교(5~29세)에 해당하는 교인이 없습니다.<br/>
               자녀·학생도 '새 교인 등록'에서 생년월일과 함께 등록하면 나이에 따라 자동으로 분류됩니다.</div> :
             schoolGroups.map(g=>(
-              <div key={g.key} style={{marginBottom:18}}>
-                <h3 style={gTitle}>{g.label} <span className="muted small">{g.items.length}명</span></h3>
-                {g.items.length===0 ?
-                  <p className="muted small" style={{margin:"0 0 8px"}}>해당 교인이 없습니다.</p> :
-                  <div className="mem-list">
-                    {g.items.map(m=>(
-                      <MemberCard key={m.id} m={m} onClick={()=>setMemView({mode:"detail", id:m.id})}/>
-                    ))}
-                  </div>}
-              </div>
+              <SchoolDept key={g.key} g={g} canEdit={canEdit} setMemView={setMemView}
+                data={(schoolClasses||{})[g.key]} saveDept={(d)=>saveClasses({...(schoolClasses||{}), [g.key]: d})}/>
             ))}
         </div>
        : book==="sok" ?
@@ -1404,7 +1503,7 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, 
 }
 
 /* ───────── 출석 체크 ───────── */
-function Attendance({members, att, saveAtt, canEdit}){
+function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
   const [svc, setSvc] = useState("sun");
   const svcObj = SERVICES.find(s=>s.key===svc);
   const [date, setDate] = useState(()=> lastWeekday(0));
@@ -1435,18 +1534,36 @@ function Attendance({members, att, saveAtt, canEdit}){
     };
     ["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7"].forEach(k=>
       bucket(k, sokLabel({g:k[0], n:Number(k[1])})));
-    SCHOOL_DEPTS.forEach(s => bucket("S_"+s.key, "교회학교 · "+s.label));
+    SCHOOL_DEPTS.forEach(s => {
+      const dep = (schoolClasses||{})[s.key];
+      const cls = dep && dep.classes ? dep.classes
+                : (DEFAULT_CLASSES[s.key]||[]).map((n,i)=>({id:"c"+s.key+i, name:n}));
+      if(cls.length){
+        cls.forEach(c => bucket("S_"+s.key+"_"+c.id, "교회학교 · "+s.label+" · "+c.name));
+        bucket("S_"+s.key+"_none", "교회학교 · "+s.label+" · 미배정");
+      } else bucket("S_"+s.key, "교회학교 · "+s.label);
+    });
     bucket("zz", "편성 없음");
 
     list.forEach(m=>{
       const s = sokOf(m);
       if(s){ bucket(s.g+s.n, sokLabel(s)).items.push(m); return; }
       const d = schoolDeptOf(m);
-      if(d){ map["S_"+d.key].items.push(m); return; }
+      if(d){
+        const dep = (schoolClasses||{})[d.key];
+        const cls = dep && dep.classes ? dep.classes
+                  : (DEFAULT_CLASSES[d.key]||[]).map((n,i)=>({id:"c"+d.key+i, name:n}));
+        if(cls.length){
+          const cid = dep && dep.of ? dep.of[m.id] : null;
+          const key = (cid && cls.some(c=>c.id===cid)) ? "S_"+d.key+"_"+cid : "S_"+d.key+"_none";
+          map[key].items.push(m);
+        } else map["S_"+d.key].items.push(m);
+        return;
+      }
       map["zz"].items.push(m);
     });
     return order.map(k=>map[k]).filter(g=>g.items.length);
-  }, [list]);
+  }, [list, schoolClasses]);
 
   const toggleGroup = g => {
     if(!canEdit) return;
