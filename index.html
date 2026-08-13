@@ -19,6 +19,24 @@
     --blue:#3D5A80; --clay:#A8442F; --clay-soft:#F4E2DC;
     --line:#DCD9CC;
   }
+  /* 부서·속 머리표 (아이콘 배지) */
+  .dept-head{display:flex;align-items:center;gap:10px;padding:9px 14px 9px 10px;border-radius:12px;
+    color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.10);margin-bottom:10px}
+  .dept-head .ico{width:30px;height:30px;border-radius:9px;background:rgba(255,255,255,.24);
+    display:flex;align-items:center;justify-content:center;font-size:17px;flex:0 0 auto}
+  .dept-head .nm{font-family:"Gowun Batang","Noto Sans KR",serif;font-size:17px;font-weight:700}
+  .dept-head .ct{background:rgba(255,255,255,.22);border-radius:999px;padding:1px 10px;font-size:12.5px}
+  .dept-head .sp{margin-left:auto;display:flex;gap:6px}
+  .dept-head button{background:rgba(255,255,255,.9);border:0;border-radius:8px;padding:4px 10px;
+    font-size:13px;color:#26332C;font-weight:600}
+  .dept-head button:hover{background:#fff}
+  /* 반 머리표 */
+  .cls-head{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:6px 12px;border-radius:10px;
+    background:var(--pine-soft);border-left:5px solid var(--pine)}
+  .cls-head .nm{font-weight:700;font-size:15px;color:var(--pine-deep)}
+  .cls-head .ct{color:var(--muted);font-size:12.5px}
+  .cls-head.none{background:#EFEEE6;border-left-color:#B8B4A4}
+  .cls-head.none .nm{color:#6C7A72}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);
     font-family:"Noto Sans KR",-apple-system,"Malgun Gothic",sans-serif;font-size:15.5px;line-height:1.55}
@@ -244,6 +262,50 @@ const DEFAULT_CLASSES = {
   child: ["번개반", "기도반", "키즈쉐프반"],
 };
 const uid2 = () => "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+
+/* 부서·속별 색과 아이콘 */
+const DEPT_STYLE = {
+  kinder: {bg:"linear-gradient(135deg,#E8913C,#D9762A)", ico:"🧸"},
+  child:  {bg:"linear-gradient(135deg,#3F8F6B,#2F6B50)", ico:"🌱"},
+  youth:  {bg:"linear-gradient(135deg,#3D5A80,#2C4260)", ico:"📖"},
+  young:  {bg:"linear-gradient(135deg,#7B5EA7,#5C4482)", ico:"🔥"},
+};
+const SOK_STYLE = {
+  "남1":{bg:"linear-gradient(135deg,#2F5D50,#1E3F36)"},
+  "남2":{bg:"linear-gradient(135deg,#3A6E5E,#27503F)"},
+  "남3":{bg:"linear-gradient(135deg,#46806D,#2F5D50)"},
+  "여1":{bg:"linear-gradient(135deg,#A8442F,#7E2F20)"},
+  "여2":{bg:"linear-gradient(135deg,#B4553C,#8A3A28)"},
+  "여3":{bg:"linear-gradient(135deg,#BE6647,#95462F)"},
+  "여4":{bg:"linear-gradient(135deg,#C29B3C,#9A7828)"},
+  "여5":{bg:"linear-gradient(135deg,#B98A46,#8F6A2F)"},
+  "여6":{bg:"linear-gradient(135deg,#A87E52,#7E5C38)"},
+  "여7":{bg:"linear-gradient(135deg,#96733F,#6E5329)"},
+};
+const headStyle = key => {
+  if(!key) return {background:"linear-gradient(135deg,#8A8677,#6E6A5D)", ico:"•"};
+  const k = String(key);
+  if(k.indexOf("S_")===0){
+    const dep = k.slice(2).split("_")[0];
+    const s = DEPT_STYLE[dep] || {};
+    return {background: s.bg || "linear-gradient(135deg,#3F8F6B,#2F6B50)", ico: s.ico || "🎒"};
+  }
+  const s = SOK_STYLE[k];
+  if(s) return {background:s.bg, ico: k[0]==="남" ? "♦" : "❀"};
+  return {background:"linear-gradient(135deg,#8A8677,#6E6A5D)", ico:"•"};
+};
+/* 부서·속 머리표 */
+function DeptHead({sKey, name, count, right}){
+  const st = headStyle(sKey);
+  return (
+    <div className="dept-head" style={{background:st.background}}>
+      <span className="ico">{st.ico}</span>
+      <span className="nm">{name}</span>
+      {count!==undefined && <span className="ct">{count}</span>}
+      {right && <span className="sp">{right}</span>}
+    </div>
+  );
+}
 
 /* 교회학교 부서 (현재 나이 기준). 이 나이대는 속별 명부에서 제외됨 */
 const SCHOOL_DEPTS = [
@@ -548,6 +610,15 @@ function App({sb, profile, logout}){
   const isLeader = !isAdmin && myScopes.length > 0;             /* 속장 · 교회학교 교사 */
   const canEdit = !isLeader && (profile.role === "admin" || profile.role === "editor");
   const canCheckAtt = canEdit || isLeader;                      /* 출석 체크 가능 */
+  /* 교회학교 담당 교사인지 (부서 하나 이상 맡은 경우) */
+  const isSchoolTeacher = isLeader && myScopes.some(k => k === "S_ALL" || k.indexOf("S_") === 0);
+  /* 이 사람의 정보를 고칠 수 있는가 — 교사는 자기 담당 학생만 */
+  const canEditMember = (m) => {
+    if(canEdit) return true;
+    if(!m || !isSchoolTeacher) return false;
+    if(!schoolDeptOf(m)) return false;                          /* 어른은 못 고침 */
+    return myScopes.some(k => inScope(m, k));                   /* 담당 부서 학생만 */
+  };
   /* 속장은 자기 속(또는 담당 부서) 사람만 보임 */
   const myMembers = isLeader
     ? members.filter(m => myScopes.some(k => inScope(m, k)))
@@ -719,6 +790,7 @@ function App({sb, profile, logout}){
   };
 
   const byId = id => members.find(m => m.id === id);
+  
   const go = v => { setView(v); if(v==="members") setMemView({mode:"list"}); window.scrollTo(0,0); };
   const openMember = id => {
     if(isLeader && !viewMembers.some(m=>m.id===id)) return;
@@ -777,16 +849,27 @@ function App({sb, profile, logout}){
         {!loaded ? <div className="panel empty">기록을 불러오는 중…</div> : <React.Fragment>
         {isLeader && <div className="panel" style={{padding:"12px 16px",marginBottom:12}}>
           <b>{myScopes.map(scopeLabel).join(" · ")}</b> 담당으로 접속 중입니다.
-          <span className="muted small"> · {myMembers.length}명의 신상을 보고 출석을 체크하실 수 있습니다.</span>
+          <span className="muted small"> · {myMembers.length}명의 신상을 보고 출석을 체크하실 수 있습니다.
+            {isSchoolTeacher && " 담당 부서 학생의 정보는 직접 수정하실 수 있습니다."}</span>
         </div>}
         {view==="home" && <Home churchName={churchName} members={myMembers} att={att} go={go} openMember={openMember}/>}
         {view==="members" && (
           memView.mode==="list" ? <MemberList members={myMembers} setMemView={setMemView} canEdit={canEdit}
             schoolClasses={schoolClasses} saveClasses={saveClasses}/> :
+          memView.mode==="form" && memView.id && !canEditMember(byId(memView.id))
+            ? <div className="panel empty">이 교인의 정보는 수정할 수 없습니다.
+                <div style={{marginTop:10}}><button className="btn sm" onClick={()=>setMemView({mode:"detail", id:memView.id})}>돌아가기</button></div>
+              </div> :
+          memView.mode==="form" && !memView.id && !canEdit
+            ? <div className="panel empty">새 교인 등록은 관리자와 수정 권한이 있는 분만 할 수 있습니다.
+                <div style={{marginTop:10}}><button className="btn sm" onClick={()=>setMemView({mode:"list"})}>돌아가기</button></div>
+              </div> :
           memView.mode==="form" ? <MemberForm init={memView.id ? byId(memView.id) : null}
               onCancel={()=>setMemView(memView.id ? {mode:"detail", id:memView.id} : {mode:"list"})}
               onSave={(m)=>{ saveMemberRow(m); setMemView({mode:"detail", id:m.id}); }}/> :
-          <MemberDetail m={viewMembers.find(x=>x.id===memView.id)} att={att} setMemView={setMemView} canEdit={canEdit}
+          <MemberDetail m={viewMembers.find(x=>x.id===memView.id)} att={att} setMemView={setMemView}
+            canEdit={canEdit || canEditMember(viewMembers.find(x=>x.id===memView.id))}
+            canDelete={canEdit}
             allMembers={viewMembers} openMember={openMember} limited={isLeader}
             outside={isLeader && !myMembers.some(x=>x.id===memView.id)}
             update={fn=>updateMember(memView.id, fn)}
@@ -837,7 +920,8 @@ function Team({sb, me, leaders, saveLeaders}){
           속장님은 출석을 저장해야 하므로 <b>수정 허용</b>으로 승인한 뒤, 아래 표에서 <b>담당 속</b>을 정해 주세요.
           담당이 정해지면 교인 신상은 보기만 되고 고칠 수는 없게 됩니다.
           <b>속 전체</b>는 어른 속 전부, <b>교회학교 전체</b>는 유치부~청년부 전부를 볼 수 있어 속회장·교회학교 부장께 알맞습니다.
-          한 사람에게 <b>여러 담당</b>을 줄 수도 있습니다(예: 중고등부 + 여자 7속). 그러면 두 곳 사람이 모두 보입니다.</p>
+          한 사람에게 <b>여러 담당</b>을 줄 수도 있습니다(예: 중고등부 + 여자 7속). 그러면 두 곳 사람이 모두 보입니다.
+          교회학교 부서를 맡은 분은 <b>담당 부서 학생의 정보만</b> 수정할 수 있습니다(어른 교인과 새 교인 등록·삭제는 안 됩니다).</p>
         {err && <div className="err-banner">{err}</div>}
         {rows===null ? <p className="empty">불러오는 중…</p> :
          pending.length===0 ? <p className="empty">승인을 기다리는 사람이 없습니다.</p> :
@@ -1023,14 +1107,11 @@ function SchoolDept({g, canEdit, setMemView, data, saveDept}){
     const cid = of[m.id];
     if(cid && bucket[cid]) bucket[cid].push(m); else rest.push(m);
   });
-  const gT = {margin:"0", fontSize:"17px", color:"var(--pine-deep)",
-    borderBottom:"2px solid var(--gold)", display:"inline-block", paddingBottom:"2px"};
-
-  const Row = ({title, items, cid}) => (
+  const Row = ({name, items, none}) => (
     <div style={{marginBottom:14}}>
-      <div className="row" style={{alignItems:"center", gap:8}}>
-        {title}
-        <span className="muted small">{items.length}명</span>
+      <div className={"cls-head"+(none?" none":"")}>
+        <span className="nm">{name}</span>
+        <span className="ct">{items.length}명</span>
       </div>
       {items.length===0
         ? <p className="muted small" style={{margin:"6px 0 0"}}>아직 배정된 학생이 없습니다.</p>
@@ -1057,12 +1138,8 @@ function SchoolDept({g, canEdit, setMemView, data, saveDept}){
 
   return (
     <div style={{marginBottom:22}}>
-      <div className="row" style={{alignItems:"baseline", gap:10, marginBottom:10}}>
-        <h3 style={gT}>{g.label}</h3>
-        <span className="muted small">{g.items.length}명</span>
-        {canEdit && <button className="btn sm ghost" style={{marginLeft:"auto"}}
-          onClick={()=>setEditing(!editing)}>{editing ? "반 편집 닫기" : "반 편집"}</button>}
-      </div>
+      <DeptHead sKey={"S_"+g.key} name={g.label} count={g.items.length+"명"}
+        right={canEdit && <button onClick={()=>setEditing(!editing)}>{editing ? "닫기" : "반 편집"}</button>}/>
 
       {editing && canEdit &&
         <div className="panel" style={{padding:"12px 16px", marginBottom:12}}>
@@ -1085,13 +1162,10 @@ function SchoolDept({g, canEdit, setMemView, data, saveDept}){
       {g.items.length===0
         ? <p className="muted small" style={{margin:"0 0 8px"}}>해당 교인이 없습니다.</p>
         : classes.length===0
-          ? <Row title={<span className="muted small">전체</span>} items={g.items} cid=""/>
+          ? <Row name="전체" items={g.items}/>
           : <React.Fragment>
-              {classes.map(c=>(
-                <Row key={c.id} cid={c.id} items={bucket[c.id]}
-                  title={<b style={{fontSize:"15px"}}>{c.name}</b>}/>
-              ))}
-              <Row cid="" items={rest} title={<b style={{fontSize:"15px", color:"var(--muted, #777)"}}>미배정</b>}/>
+              {classes.map(c=> <Row key={c.id} name={c.name} items={bucket[c.id]}/>)}
+              {rest.length>0 && <Row name="미배정" items={rest} none/>}
             </React.Fragment>}
     </div>
   );
@@ -1193,7 +1267,7 @@ function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses}){
         <div>
           {sokGroups.map(g=>(
             <div key={g.key} style={{marginBottom:18}}>
-              <h3 style={gTitle}>{g.label} <span className="muted small">{g.items.length}명</span></h3>
+              <DeptHead sKey={g.key==="zz" ? "" : g.key} name={g.label} count={g.items.length+"명"}/>
               {g.key==="zz" && <p className="muted small" style={{margin:"0 0 8px"}}>
                 성별·생년월일이 없어 속을 정하지 못했습니다. '정보 수정'에서 성별과 생년월일을 넣으면 자동 배정됩니다.</p>}
               <div className="mem-list">
@@ -1323,7 +1397,7 @@ function MemberForm({init, onSave, onCancel}){
 }
 
 /* ───────── 교인 상세 ───────── */
-function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, openMember, limited, outside}){
+function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, allMembers, openMember, limited, outside}){
   const [vWhen, setVWhen] = useState(nowLocal());
   const [vPurpose, setVPurpose] = useState("정기심방");
   const [vNote, setVNote] = useState("");
@@ -1356,7 +1430,7 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, allMembers, 
             <h2 style={{margin:0}}>{m.name} <span className="chip pos">{m.position||"성도"}</span></h2>
             {canEdit && <div className="row" style={{gap:6}}>
               <button className="btn sm" onClick={()=>setMemView({mode:"form", id:m.id})}>정보 수정</button>
-              <button className="btn sm danger" onClick={remove}>삭제</button>
+              {canDelete!==false && <button className="btn sm danger" onClick={remove}>삭제</button>}
             </div>}
           </div>
         </div>
@@ -1602,12 +1676,8 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
             const allOn = onCount === g.items.length;
             return (
               <div key={g.key} style={{marginTop:18}}>
-                <div className="row" style={{alignItems:"baseline",gap:10}}>
-                  <h3 style={gTitle}>{g.label}</h3>
-                  <span className="muted small">{onCount} / {g.items.length}명</span>
-                  {canEdit && <button className="btn sm ghost" style={{marginLeft:"auto"}}
-                    onClick={()=>toggleGroup(g)}>{allOn ? "전체 해제" : "전체 체크"}</button>}
-                </div>
+                <DeptHead sKey={g.key} name={g.label} count={onCount + " / " + g.items.length + "명"}
+                  right={canEdit && <button onClick={()=>toggleGroup(g)}>{allOn ? "전체 해제" : "전체 체크"}</button>}/>
                 <div className="att-list" style={{marginTop:8}}>
                   {g.items.map(m=>{
                     const on = checked.includes(m.id);
