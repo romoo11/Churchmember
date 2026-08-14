@@ -855,7 +855,9 @@ function App({sb, profile, logout}){
         {view==="home" && <Home churchName={churchName} members={myMembers} att={att} go={go} openMember={openMember}/>}
         {view==="members" && (
           memView.mode==="list" ? <MemberList members={myMembers} setMemView={setMemView} canEdit={canEdit}
-            schoolClasses={schoolClasses} saveClasses={saveClasses}/> :
+            schoolClasses={schoolClasses} saveClasses={saveClasses}
+            canEditClass={(deptKey)=> canEdit ||
+              (isSchoolTeacher && myScopes.some(k => k==="S_ALL" || k==="S_"+deptKey))}/> :
           memView.mode==="form" && memView.id && !canEditMember(byId(memView.id))
             ? <div className="panel empty">이 교인의 정보는 수정할 수 없습니다.
                 <div style={{marginTop:10}}><button className="btn sm" onClick={()=>setMemView({mode:"detail", id:memView.id})}>돌아가기</button></div>
@@ -1171,7 +1173,7 @@ function SchoolDept({g, canEdit, setMemView, data, saveDept}){
   );
 }
 
-function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses}){
+function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses, canEditClass}){
   const [book, setBook] = useState("all"); // all=교인 명부 | sok=속별 명부
   const [q, setQ] = useState("");
   const [pos, setPos] = useState("전체");
@@ -1259,7 +1261,7 @@ function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses}){
             <div className="panel empty">교회학교(5~29세)에 해당하는 교인이 없습니다.<br/>
               자녀·학생도 '새 교인 등록'에서 생년월일과 함께 등록하면 나이에 따라 자동으로 분류됩니다.</div> :
             schoolGroups.map(g=>(
-              <SchoolDept key={g.key} g={g} canEdit={canEdit} setMemView={setMemView}
+              <SchoolDept key={g.key} g={g} canEdit={canEditClass ? canEditClass(g.key) : canEdit} setMemView={setMemView}
                 data={(schoolClasses||{})[g.key]} saveDept={(d)=>saveClasses({...(schoolClasses||{}), [g.key]: d})}/>
             ))}
         </div>
