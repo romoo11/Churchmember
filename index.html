@@ -285,6 +285,7 @@ const SOK_STYLE = {
 const headStyle = key => {
   if(!key) return {background:"linear-gradient(135deg,#8A8677,#6E6A5D)", ico:"•"};
   const k = String(key);
+  if(k === "MIN") return {background:"linear-gradient(135deg,#B8912F,#8C6C1E)", ico:"✝"};
   if(k.indexOf("S_")===0){
     const dep = k.slice(2).split("_")[0];
     const s = DEPT_STYLE[dep] || {};
@@ -336,15 +337,20 @@ const sokLabel = s => `${s.g}자 ${s.n}속 (${s.n}${s.g}선교회)`;
 /* 현재 나이로 교회학교 부서 찾기 */
 /* 한 사람이 속한 편성 구분: 남1~3, 여1~7, 교회학교 부서, 그 외 */
 const scopeKeyOf = m => {
+  if(isMinister(m)) return "MIN";
   const s = sokOf(m);
   if(s) return s.g + s.n;
   const d = schoolDeptOf(m);
   if(d) return "S_" + d.key;
   return "zz";
 };
+const MINISTERS = ["담임목사","부목사","전도사"];   /* 교역자 — 속·부서와 별도로 묶음 */
+const isMinister = m => MINISTERS.includes(m && m.position);
+
 const ATT_ONLY = "ATT_ONLY";   /* 예배 출석 체크만 (성도 전체 · 교회학교 제외) */
 const SCOPE_LIST = () => [
   [ATT_ONLY, "예배 출석 체크만 (성도 전체 · 교회학교 제외)"],
+  ["MIN", "교역자"],
   ["SOK_ALL", "속 전체 (남·여 모든 속)"],
   ...["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7"]
       .map(k=>[k, sokLabel({g:k[0], n:Number(k[1])})]),
@@ -361,8 +367,8 @@ const scopesOf = (leaders, id) => {
 /* 담당 범위에 드는 사람인지 */
 const inScope = (m, k) => {
   const sk = scopeKeyOf(m);
-  if(k === ATT_ONLY)  return sk.indexOf("S_") !== 0;                  /* 어른 전부(속 미지정 포함), 교회학교 제외 */
-  if(k === "SOK_ALL") return sk !== "zz" && sk.indexOf("S_") !== 0;   /* 속에 편성된 사람 전부 */
+  if(k === ATT_ONLY)  return sk.indexOf("S_") !== 0;                  /* 교역자·어른 전부, 교회학교 제외 */
+  if(k === "SOK_ALL") return sk === "MIN" || (sk !== "zz" && sk.indexOf("S_") !== 0);  /* 교역자 + 속에 편성된 사람 */
   if(k === "S_ALL")   return sk.indexOf("S_") === 0;                  /* 교회학교 전부 */
   return sk === k;
 };
@@ -1215,6 +1221,10 @@ function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses, c
   const sokGroups = useMemo(()=>{
     const map = {};
     list.forEach(m=>{
+      if(isMinister(m)){                                   /* 교역자는 따로 묶음 */
+        if(!map["MIN"]) map["MIN"] = {s:null, items:[]};
+        map["MIN"].items.push(m); return;
+      }
       const s = sokOf(m);
       /* 교회학교(유치부~청년부) 대상은 속별 명부에 나오지 않음 */
       if(!s && schoolDeptOf(m)) return;
@@ -1222,10 +1232,10 @@ function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses, c
       if(!map[key]) map[key] = {s:s, items:[]};
       map[key].items.push(m);
     });
-    const order = ["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7","zz"];
+    const order = ["MIN","남1","남2","남3","여1","여2","여3","여4","여5","여6","여7","zz"];
     return order.filter(k=>map[k]).map(k=>({
       key:k,
-      label: k==="zz" ? "속 미지정" : sokLabel(map[k].s),
+      label: k==="MIN" ? "교역자" : k==="zz" ? "속 미지정" : sokLabel(map[k].s),
       items: map[k].items
     }));
   }, [list]);
@@ -1235,6 +1245,7 @@ function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses, c
     return SCHOOL.map(s=>({
       key:s.key, label:s.label,
       items: list.filter(m=>{
+        if(isMinister(m)) return false;                    /* 교역자는 교회학교 명부에서 제외 */
         const a = koAge(m.birth);
         return a!==null && a>=s.min && a<=s.max;
       })
@@ -1622,6 +1633,7 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
       if(!map[key]){ map[key] = {key, label, items:[]}; order.push(key); }
       return map[key];
     };
+    bucket("MIN", "교역자");
     ["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7"].forEach(k=>
       bucket(k, sokLabel({g:k[0], n:Number(k[1])})));
     SCHOOL_DEPTS.forEach(s => {
@@ -1636,6 +1648,7 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
     bucket("zz", "편성 없음");
 
     list.forEach(m=>{
+      if(isMinister(m)){ map["MIN"].items.push(m); return; }
       const s = sokOf(m);
       if(s){ bucket(s.g+s.n, sokLabel(s)).items.push(m); return; }
       const d = schoolDeptOf(m);
