@@ -802,7 +802,11 @@ function App({sb, profile, logout}){
 
   const byId = id => members.find(m => m.id === id);
   
-  const go = v => { setView(v); if(v==="members") setMemView({mode:"list"}); window.scrollTo(0,0); };
+  const go = v => {
+    if(isLeader && (v==="visit" || v==="pray" || v==="team")) return;
+    if(attOnly && v!=="home" && v!=="att") return;
+    setView(v); if(v==="members") setMemView({mode:"list"}); window.scrollTo(0,0);
+  };
   const openMember = id => {
     if(attOnly) return;
     if(isLeader && !viewMembers.some(m=>m.id===id)) return;
