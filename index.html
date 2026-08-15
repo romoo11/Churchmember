@@ -35,8 +35,10 @@
     background:var(--pine-soft);border-left:5px solid var(--pine)}
   .cls-head .nm{font-weight:700;font-size:15px;color:var(--pine-deep)}
   .cls-head .ct{color:var(--muted);font-size:12.5px}
+  .cls-head .btn.sm{margin-left:auto}
   .cls-head.none{background:#EFEEE6;border-left-color:#B8B4A4}
   .cls-head.none .nm{color:#6C7A72}
+  .chip.secret{background:#7E2F20;color:#fff}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);
     font-family:"Noto Sans KR",-apple-system,"Malgun Gothic",sans-serif;font-size:15.5px;line-height:1.55}
@@ -896,6 +898,8 @@ function App({sb, profile, logout}){
             canEdit={canEdit || canEditMember(viewMembers.find(x=>x.id===memView.id))}
             canDelete={canEdit}
             allMembers={viewMembers} openMember={openMember} limited={isLeader}
+            canPray={isLeader && !attOnly && myMembers.some(x=>x.id===memView.id)}
+            meName={profile.name || profile.email} meId={profile.id}
             outside={isLeader && !myMembers.some(x=>x.id===memView.id)}
             update={fn=>updateMember(memView.id, fn)}
             remove={()=>{
@@ -907,9 +911,13 @@ function App({sb, profile, logout}){
             }}/>
         )}
         {view==="att" && <Attendance members={myMembers} att={att} saveAtt={saveAtt} canEdit={canCheckAtt} schoolClasses={schoolClasses}/>}
-        {view==="visit" && <Visits members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>}
-        {view==="pray" && <Prayers members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>}
-        {view==="visit" && isLeader && <p className="empty">심방 기록은 목회자와 관리자만 볼 수 있습니다.</p>}
+        {view==="visit" && (isLeader
+          ? <p className="empty">심방 기록은 목회자와 관리자만 볼 수 있습니다.</p>
+          : <Visits members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>)}
+        {view==="pray" && (isLeader
+          ? <p className="empty">중보기도 전체 목록은 목회자와 관리자만 볼 수 있습니다. 담당 교인의 기도 제목은 그 교인 화면에서 보실 수 있습니다.</p>
+          : <Prayers members={members} update={updateMember} openMember={openMember} canEdit={canEdit}
+              meName={profile.name || profile.email} meId={profile.id}/>)}
         {view==="team" && isAdmin && <Team sb={sb} me={profile} leaders={leaders} saveLeaders={saveLeaders}/>}
         </React.Fragment>}
       </div>
@@ -1428,7 +1436,9 @@ function MemberForm({init, onSave, onCancel}){
 }
 
 /* ───────── 교인 상세 ───────── */
-function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, allMembers, openMember, limited, outside}){
+function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, allMembers, openMember, limited, outside, canPray, meName, meId}){
+  const [pSecret, setPSecret] = useState(false);
+  const visiblePrayers = (m && m.prayers ? m.prayers : []).filter(p => !limited || !p.secret);
   const [vWhen, setVWhen] = useState(nowLocal());
   const [vPurpose, setVPurpose] = useState("정기심방");
   const [vNote, setVNote] = useState("");
@@ -1565,22 +1575,26 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
         </React.Fragment>}
       </div>}
 
-      {!limited && <div className="panel">
-        <h2>중보기도 <span className="muted small">{(m.prayers||[]).length}건</span></h2>
-        {(m.prayers||[]).length>0 &&
+      {(!limited || canPray) && <div className="panel">
+        <h2>중보기도 <span className="muted small">{visiblePrayers.length}건</span>
+          {limited && <span className="muted small"> · 일반 중보기도만 보입니다</span>}</h2>
+        {visiblePrayers.length>0 &&
           <div className="tbl-wrap"><table>
             <thead><tr><th>요청일</th><th>기도 제목</th><th>상태</th><th></th></tr></thead>
-            <tbody>{[...m.prayers].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(p=>(
+            <tbody>{[...visiblePrayers].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(p=>(
               <tr key={p.id}>
-                <td style={{whiteSpace:"nowrap"}}>{p.date}</td>
-                <td style={{whiteSpace:"pre-wrap"}}>{p.request}</td>
+                <td style={{whiteSpace:"nowrap"}}>{p.date}
+                  {p.by && <div className="muted small">{p.by}</div>}</td>
+                <td style={{whiteSpace:"pre-wrap"}}>
+                  {p.secret && <span className="chip secret" style={{marginRight:6}}>긴밀</span>}
+                  {p.request}</td>
                 <td style={{whiteSpace:"nowrap"}}>
                   {p.status==="answered"
                     ? <span className="chip ans">응답 {p.answeredDate && `(${p.answeredDate})`}</span>
                     : <span className="chip open">요청중</span>}
                 </td>
                 <td style={{whiteSpace:"nowrap"}}>
-                  {canEdit && <React.Fragment>
+                  {(canEdit || (limited && p.byId === meId)) && <React.Fragment>
                   <button className="btn sm ghost" onClick={()=>update(o=>({...o, prayers:o.prayers.map(x=>
                     x.id===p.id ? (x.status==="answered" ? {...x,status:"open",answeredDate:""} : {...x,status:"answered",answeredDate:todayStr()}) : x)}))}>
                     {p.status==="answered" ? "요청중으로" : "응답 체크"}
@@ -1592,15 +1606,25 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
                 </td>
               </tr>))}
             </tbody></table></div>}
-        {canEdit && <React.Fragment>
+        {(canEdit || canPray) && <React.Fragment>
         <h3>새 기도 제목</h3>
         <div className="row">
           <input placeholder="기도 요청 사항" value={pReq} onChange={e=>setPReq(e.target.value)} style={{flex:"1 1 240px"}}/>
           <button className="btn" disabled={!pReq.trim()} onClick={()=>{
-            update(o=>({...o, prayers:[...(o.prayers||[]), {id:uid(), date:todayStr(), request:pReq.trim(), status:"open", answeredDate:""}]}));
-            setPReq("");
+            update(o=>({...o, prayers:[...(o.prayers||[]),
+              {id:uid(), date:todayStr(), request:pReq.trim(), status:"open", answeredDate:"",
+               secret: pSecret, by: meName, byId: meId}]}));
+            setPReq(""); setPSecret(false);
           }}>추가</button>
         </div>
+        {!limited &&
+          <label className="row small" style={{gap:6, marginTop:8, alignItems:"center"}}>
+            <input type="checkbox" checked={pSecret} onChange={e=>setPSecret(e.target.checked)}/>
+            <b>긴밀 중보기도</b>
+            <span className="muted">— 목회자와 관리자만 볼 수 있습니다. 속장·교사에게는 보이지 않습니다.</span>
+          </label>}
+        {limited && <p className="muted small" style={{marginTop:8, marginBottom:0}}>
+          여기에 올린 기도 제목은 <b>일반 중보기도</b>로 기록되어 목회자와 함께 보게 됩니다.</p>}
         </React.Fragment>}
       </div>}
     </div>
@@ -1645,9 +1669,9 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
       const cls = dep && dep.classes ? dep.classes
                 : (DEFAULT_CLASSES[s.key]||[]).map((n,i)=>({id:"c"+s.key+i, name:n}));
       if(cls.length){
-        cls.forEach(c => bucket("S_"+s.key+"_"+c.id, "교회학교 · "+s.label+" · "+c.name));
-        bucket("S_"+s.key+"_none", "교회학교 · "+s.label+" · 미배정");
-      } else bucket("S_"+s.key, "교회학교 · "+s.label);
+        cls.forEach(c => { const b = bucket("S_"+s.key+"_"+c.id, c.name); b.dept = s; b.cls = true; });
+        const bn = bucket("S_"+s.key+"_none", "미배정"); bn.dept = s; bn.cls = true; bn.none = true;
+      } else { const b = bucket("S_"+s.key, "교회학교 · "+s.label); b.dept = s; }
     });
     bucket("zz", "편성 없음");
 
@@ -1671,6 +1695,27 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
     });
     return order.map(k=>map[k]).filter(g=>g.items.length);
   }, [list, schoolClasses]);
+
+  /* 부서 전체 재적·출석 (반으로 나뉜 부서만) */
+  const deptSummary = useMemo(()=>{
+    const s = {};
+    groups.forEach(g=>{
+      if(!g.dept || !g.cls) return;
+      const k = g.dept.key;
+      if(!s[k]) s[k] = {dept:g.dept, total:0, on:0, firstKey:g.key};
+      s[k].total += g.items.length;
+      s[k].on += g.items.filter(m=>checked.includes(m.id)).length;
+    });
+    return s;
+  }, [groups, checked]);
+
+  const toggleDept = (k) => {
+    if(!canEdit) return;
+    const ids = groups.filter(g=>g.dept && g.dept.key===k).flatMap(g=>g.items.map(m=>m.id));
+    const allOn = ids.every(id=>checked.includes(id));
+    saveAtt(date, svc, allOn ? checked.filter(id=>!ids.includes(id))
+                             : [...checked, ...ids.filter(id=>!checked.includes(id))]);
+  };
 
   const toggleGroup = g => {
     if(!canEdit) return;
@@ -1707,10 +1752,25 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
           groups.map(g=>{
             const onCount = g.items.filter(m=>checked.includes(m.id)).length;
             const allOn = onCount === g.items.length;
+            const dk = g.dept && g.cls ? g.dept.key : null;
+            const sum = dk ? deptSummary[dk] : null;
+            const showDeptHead = sum && sum.firstKey === g.key;   /* 부서의 첫 반 위에만 부서 머리표 */
+            const rate = sum && sum.total ? Math.round(sum.on / sum.total * 100) : 0;
             return (
-              <div key={g.key} style={{marginTop:18}}>
-                <DeptHead sKey={g.key} name={g.label} count={onCount + " / " + g.items.length + "명"}
-                  right={canEdit && <button onClick={()=>toggleGroup(g)}>{allOn ? "전체 해제" : "전체 체크"}</button>}/>
+              <div key={g.key} style={{marginTop: showDeptHead ? 22 : 14}}>
+                {showDeptHead &&
+                  <DeptHead sKey={"S_"+dk} name={"교회학교 · " + sum.dept.label}
+                    count={"출석 " + sum.on + " / 재적 " + sum.total + "명 · " + rate + "%"}
+                    right={canEdit && <button onClick={()=>toggleDept(dk)}>부서 전체</button>}/>}
+                {g.cls
+                  ? <div className={"cls-head"+(g.none?" none":"")}>
+                      <span className="nm">{g.label}</span>
+                      <span className="ct">{onCount} / {g.items.length}명</span>
+                      {canEdit && <button className="btn sm ghost" style={{marginLeft:"auto",padding:"2px 10px"}}
+                        onClick={()=>toggleGroup(g)}>{allOn ? "반 해제" : "반 체크"}</button>}
+                    </div>
+                  : <DeptHead sKey={g.key} name={g.label} count={onCount + " / " + g.items.length + "명"}
+                      right={canEdit && <button onClick={()=>toggleGroup(g)}>{allOn ? "전체 해제" : "전체 체크"}</button>}/>}
                 <div className="att-list" style={{marginTop:8}}>
                   {g.items.map(m=>{
                     const on = checked.includes(m.id);
