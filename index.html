@@ -1576,8 +1576,7 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
       </div>}
 
       {(!limited || canPray) && <div className="panel">
-        <h2>중보기도 <span className="muted small">{visiblePrayers.length}건</span>
-          {limited && <span className="muted small"> · 일반 중보기도만 보입니다</span>}</h2>
+        <h2>중보기도 <span className="muted small">{visiblePrayers.length}건</span></h2>
         {visiblePrayers.length>0 &&
           <div className="tbl-wrap"><table>
             <thead><tr><th>요청일</th><th>기도 제목</th><th>상태</th><th></th></tr></thead>
@@ -1624,7 +1623,7 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
             <span className="muted">— 목회자와 관리자만 볼 수 있습니다. 속장·교사에게는 보이지 않습니다.</span>
           </label>}
         {limited && <p className="muted small" style={{marginTop:8, marginBottom:0}}>
-          여기에 올린 기도 제목은 <b>일반 중보기도</b>로 기록되어 목회자와 함께 보게 됩니다.</p>}
+          여기에 올린 기도제목은 목회자와 함께 보게 됩니다.</p>}
         </React.Fragment>}
       </div>}
     </div>
