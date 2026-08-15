@@ -1867,14 +1867,17 @@ function Visits({members, update, openMember, canEdit}){
 }
 
 /* ───────── 중보기도 전체 ───────── */
-function Prayers({members, update, openMember, canEdit}){
+function Prayers({members, update, openMember, canEdit, meName, meId}){
   const [filter, setFilter] = useState("open");
+  const [kind, setKind] = useState("all");     /* all | normal | secret */
   const [memId, setMemId] = useState("");
   const [req, setReq] = useState("");
+  const [secret, setSecret] = useState(false);
 
   const all = members.flatMap(m => (m.prayers||[]).map(p=>({...p, memId:m.id, memName:m.name})))
     .sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-  const list = all.filter(p => filter==="all" || p.status===filter);
+  const list = all.filter(p => (filter==="all" || p.status===filter)
+    && (kind==="all" || (kind==="secret" ? !!p.secret : !p.secret)));
   const openN = all.filter(p=>p.status==="open").length;
 
   return (
@@ -1889,18 +1892,32 @@ function Prayers({members, update, openMember, canEdit}){
           </select>
           <input placeholder="기도 요청 사항" value={req} onChange={e=>setReq(e.target.value)} style={{flex:"1 1 220px"}}/>
           <button className="btn" disabled={!memId || !req.trim()} onClick={()=>{
-            update(memId, o=>({...o, prayers:[...(o.prayers||[]), {id:uid(), date:todayStr(), request:req.trim(), status:"open", answeredDate:""}]}));
-            setReq("");
+            update(memId, o=>({...o, prayers:[...(o.prayers||[]),
+              {id:uid(), date:todayStr(), request:req.trim(), status:"open", answeredDate:"",
+               secret, by: meName, byId: meId}]}));
+            setReq(""); setSecret(false);
           }}>추가</button>
         </div>}
+        {members.length>0 &&
+          <label className="row small" style={{gap:6, marginTop:8, alignItems:"center"}}>
+            <input type="checkbox" checked={secret} onChange={e=>setSecret(e.target.checked)}/>
+            <b>긴밀 중보기도</b>
+            <span className="muted">— 목회자와 관리자만 볼 수 있습니다. 속장·교사에게는 보이지 않습니다.</span>
+          </label>}
       </div>}
 
       <div className="panel">
         <div className="row" style={{justifyContent:"space-between"}}>
           <h2 style={{margin:0}}>중보기도 <span className="muted small">요청중 {openN}건</span></h2>
-          <div className="svc-tabs" style={{margin:0}}>
-            {[["open","요청중"],["answered","응답"],["all","전체"]].map(([k,l])=>(
-              <button key={k} className={filter===k?"on":""} onClick={()=>setFilter(k)}>{l}</button>))}
+          <div className="row" style={{gap:8}}>
+            <div className="svc-tabs" style={{margin:0}}>
+              {[["all","일반+긴밀"],["normal","일반"],["secret","긴밀"]].map(([k,l])=>(
+                <button key={k} className={kind===k?"on":""} onClick={()=>setKind(k)}>{l}</button>))}
+            </div>
+            <div className="svc-tabs" style={{margin:0}}>
+              {[["open","요청중"],["answered","응답"],["all","전체"]].map(([k,l])=>(
+                <button key={k} className={filter===k?"on":""} onClick={()=>setFilter(k)}>{l}</button>))}
+            </div>
           </div>
         </div>
         {list.length===0 ? <p className="empty">해당하는 기도 제목이 없습니다.</p> :
@@ -1908,9 +1925,12 @@ function Prayers({members, update, openMember, canEdit}){
             <thead><tr><th>요청일</th><th>교인</th><th>기도 제목</th><th>상태</th><th></th></tr></thead>
             <tbody>{list.map(p=>(
               <tr key={p.id}>
-                <td style={{whiteSpace:"nowrap"}}>{p.date}</td>
+                <td style={{whiteSpace:"nowrap"}}>{p.date}
+                  {p.by && <div className="muted small">{p.by}</div>}</td>
                 <td><button className="btn sm ghost" onClick={()=>openMember(p.memId)}>{p.memName}</button></td>
-                <td style={{whiteSpace:"pre-wrap"}}>{p.request}</td>
+                <td style={{whiteSpace:"pre-wrap"}}>
+                  {p.secret && <span className="chip secret" style={{marginRight:6}}>긴밀</span>}
+                  {p.request}</td>
                 <td style={{whiteSpace:"nowrap"}}>
                   {p.status==="answered"
                     ? <span className="chip ans">응답 {p.answeredDate && `(${p.answeredDate})`}</span>
@@ -1921,6 +1941,10 @@ function Prayers({members, update, openMember, canEdit}){
                   <button className="btn sm ghost" onClick={()=>update(p.memId, o=>({...o, prayers:o.prayers.map(x=>
                     x.id===p.id ? (x.status==="answered" ? {...x,status:"open",answeredDate:""} : {...x,status:"answered",answeredDate:todayStr()}) : x)}))}>
                     {p.status==="answered" ? "요청중으로" : "응답 체크"}
+                  </button>{" "}
+                  <button className="btn sm ghost" onClick={()=>update(p.memId, o=>({...o, prayers:o.prayers.map(x=>
+                    x.id===p.id ? {...x, secret: !x.secret} : x)}))}>
+                    {p.secret ? "일반으로" : "긴밀로"}
                   </button>{" "}
                   <button className="btn sm danger" onClick={()=>{
                     if(confirm("이 기도 제목을 삭제할까요?"))
