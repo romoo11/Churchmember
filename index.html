@@ -342,7 +342,9 @@ const scopeKeyOf = m => {
   if(d) return "S_" + d.key;
   return "zz";
 };
+const ATT_ONLY = "ATT_ONLY";   /* 예배 출석 체크만 (성도 전체 · 교회학교 제외) */
 const SCOPE_LIST = () => [
+  [ATT_ONLY, "예배 출석 체크만 (성도 전체 · 교회학교 제외)"],
   ["SOK_ALL", "속 전체 (남·여 모든 속)"],
   ...["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7"]
       .map(k=>[k, sokLabel({g:k[0], n:Number(k[1])})]),
@@ -359,6 +361,7 @@ const scopesOf = (leaders, id) => {
 /* 담당 범위에 드는 사람인지 */
 const inScope = (m, k) => {
   const sk = scopeKeyOf(m);
+  if(k === ATT_ONLY)  return sk.indexOf("S_") !== 0;                  /* 어른 전부(속 미지정 포함), 교회학교 제외 */
   if(k === "SOK_ALL") return sk !== "zz" && sk.indexOf("S_") !== 0;   /* 속에 편성된 사람 전부 */
   if(k === "S_ALL")   return sk.indexOf("S_") === 0;                  /* 교회학교 전부 */
   return sk === k;
@@ -612,6 +615,8 @@ function App({sb, profile, logout}){
   const canCheckAtt = canEdit || isLeader;                      /* 출석 체크 가능 */
   /* 교회학교 담당 교사인지 (부서 하나 이상 맡은 경우) */
   const isSchoolTeacher = isLeader && myScopes.some(k => k === "S_ALL" || k.indexOf("S_") === 0);
+  /* 출석 체크만 맡은 분 — 다른 담당이 함께 있으면 명부도 볼 수 있음 */
+  const attOnly = isLeader && myScopes.length === 1 && myScopes[0] === ATT_ONLY;
   /* 이 사람의 정보를 고칠 수 있는가 — 교사는 자기 담당 학생만 */
   const canEditMember = (m) => {
     if(canEdit) return true;
@@ -793,11 +798,14 @@ function App({sb, profile, logout}){
   
   const go = v => { setView(v); if(v==="members") setMemView({mode:"list"}); window.scrollTo(0,0); };
   const openMember = id => {
+    if(attOnly) return;
     if(isLeader && !viewMembers.some(m=>m.id===id)) return;
     setView("members"); setMemView({mode:"detail", id}); window.scrollTo(0,0);
   };
 
-  const navItems = isLeader
+  const navItems = attOnly
+    ? [["home","대문"],["att","예배 출석 체크"]]
+    : isLeader
     ? [["home","대문"],
        ["members", myScopes.every(k=>k.indexOf("S_")===0) ? "우리 부서"
                  : myScopes.some(k=>k.indexOf("S_")===0) ? "담당 교인" : "우리 속 교인"],
@@ -849,11 +857,16 @@ function App({sb, profile, logout}){
         {!loaded ? <div className="panel empty">기록을 불러오는 중…</div> : <React.Fragment>
         {isLeader && <div className="panel" style={{padding:"12px 16px",marginBottom:12}}>
           <b>{myScopes.map(scopeLabel).join(" · ")}</b> 담당으로 접속 중입니다.
-          <span className="muted small"> · {myMembers.length}명의 신상을 보고 출석을 체크하실 수 있습니다.
+          <span className="muted small">
+            {attOnly
+              ? ` · 성도 ${myMembers.length}명의 예배 출석만 체크하실 수 있습니다. 교인 신상은 보이지 않습니다.`
+              : ` · ${myMembers.length}명의 신상을 보고 출석을 체크하실 수 있습니다.`}
             {isSchoolTeacher && " 담당 부서 학생의 정보는 직접 수정하실 수 있습니다."}</span>
         </div>}
-        {view==="home" && <Home churchName={churchName} members={myMembers} att={att} go={go} openMember={openMember}/>}
-        {view==="members" && (
+        {view==="home" && <Home churchName={churchName} members={attOnly ? [] : myMembers} att={att} go={go} openMember={openMember}/>}
+        {view==="members" && attOnly &&
+          <p className="empty">예배 출석 체크만 맡으셨습니다. 교인 명부는 볼 수 없습니다.</p>}
+        {view==="members" && !attOnly && (
           memView.mode==="list" ? <MemberList members={myMembers} setMemView={setMemView} canEdit={canEdit}
             schoolClasses={schoolClasses} saveClasses={saveClasses}
             canEditClass={(deptKey)=> canEdit ||
@@ -923,7 +936,8 @@ function Team({sb, me, leaders, saveLeaders}){
           담당이 정해지면 교인 신상은 보기만 되고 고칠 수는 없게 됩니다.
           <b>속 전체</b>는 어른 속 전부, <b>교회학교 전체</b>는 유치부~청년부 전부를 볼 수 있어 속회장·교회학교 부장께 알맞습니다.
           한 사람에게 <b>여러 담당</b>을 줄 수도 있습니다(예: 중고등부 + 여자 7속). 그러면 두 곳 사람이 모두 보입니다.
-          교회학교 부서를 맡은 분은 <b>담당 부서 학생의 정보만</b> 수정할 수 있습니다(어른 교인과 새 교인 등록·삭제는 안 됩니다).</p>
+          교회학교 부서를 맡은 분은 <b>담당 부서 학생의 정보만</b> 수정할 수 있습니다(어른 교인과 새 교인 등록·삭제는 안 됩니다).
+          <b>예배 출석 체크만</b>을 주면 성도 전체(교회학교 제외)의 출석만 체크하고 <b>교인 신상은 전혀 볼 수 없습니다</b> — 예배 안내위원께 알맞습니다.</p>
         {err && <div className="err-banner">{err}</div>}
         {rows===null ? <p className="empty">불러오는 중…</p> :
          pending.length===0 ? <p className="empty">승인을 기다리는 사람이 없습니다.</p> :
