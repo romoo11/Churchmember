@@ -57,6 +57,9 @@
   .brand svg{flex:none}
   .brand button{background:none;border:none;color:inherit;font:inherit;padding:0;text-align:left}
   .brand button:hover{text-decoration:underline}
+  .back-btn{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#F2EFE4;
+    padding:7px 14px;border-radius:9px;font-size:14.5px;font-weight:600;white-space:nowrap;margin-right:2px}
+  .back-btn:hover{background:rgba(255,255,255,.26)}
   nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
   nav button{background:none;border:none;color:#CFDDD6;padding:8px 13px;border-radius:8px;font-weight:500}
   nav button:hover{background:rgba(255,255,255,.09);color:#fff}
@@ -808,14 +811,28 @@ function App({sb, profile, logout}){
 
   const byId = id => members.find(m => m.id === id);
   
+  /* 뒤로 가기: 지나온 화면을 쌓아 두었다가 한 걸음씩 되돌아감 */
+  const [history, setHistory] = useState([]);
+  const pushHistory = () => setHistory(h => [...h.slice(-19), {view, memView}]);
+  const goBack = () => {
+    setHistory(h => {
+      if(!h.length) return h;
+      const prev = h[h.length-1];
+      setView(prev.view); setMemView(prev.memView); window.scrollTo(0,0);
+      return h.slice(0, -1);
+    });
+  };
+
   const go = v => {
     if(isLeader && (v==="visit" || v==="pray" || v==="team")) return;
     if(attOnly && v!=="home" && v!=="att") return;
+    if(v !== view) pushHistory();
     setView(v); if(v==="members") setMemView({mode:"list"}); window.scrollTo(0,0);
   };
   const openMember = id => {
     if(attOnly) return;
     if(isLeader && !viewMembers.some(m=>m.id===id)) return;
+    pushHistory();
     setView("members"); setMemView({mode:"detail", id}); window.scrollTo(0,0);
   };
 
@@ -852,6 +869,8 @@ function App({sb, profile, logout}){
             <Logo/>
             <button onClick={isAdmin ? renameChurch : undefined} title={isAdmin?"교회 이름 바꾸기":""}>{churchName} 교인 관리</button>
           </div>
+          {history.length>0 &&
+            <button className="back-btn" onClick={goBack} title="이전 화면으로">‹ 뒤로</button>}
           <nav>
             {navItems.map(([k,l])=>(
               <button key={k} className={view===k?"on":""} onClick={()=>go(k)}>{l}</button>
@@ -883,7 +902,7 @@ function App({sb, profile, logout}){
         {view==="members" && attOnly &&
           <p className="empty">예배 출석 체크만 맡으셨습니다. 교인 명부는 볼 수 없습니다.</p>}
         {view==="members" && !attOnly && (
-          memView.mode==="list" ? <MemberList members={myMembers} setMemView={setMemView} canEdit={canEdit}
+          memView.mode==="list" ? <MemberList members={myMembers} setMemView={v=>{pushHistory(); setMemView(v);}} canEdit={canEdit}
             schoolClasses={schoolClasses} saveClasses={saveClasses}
             canEditClass={(deptKey)=> canEdit ||
               (isSchoolTeacher && myScopes.some(k => k==="S_ALL" || k==="S_"+deptKey))}/> :
