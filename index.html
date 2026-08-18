@@ -40,14 +40,12 @@
   .cls-head.none .nm{color:#6C7A72}
   .chip.secret{background:#7E2F20;color:#fff}
   /* 출석 통계 */
-  .stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0 18px}
-  .stat-card{background:var(--pine-soft);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
-  .stat-card .lb{font-size:12.5px;color:var(--muted)}
-  .stat-card b{font-size:22px;color:var(--pine-deep);font-family:"Gowun Batang","Noto Sans KR",serif}
-  .stat-card .sub{font-size:12px;color:var(--muted)}
-  .bar{background:#E8E6DA;border-radius:999px;height:12px;overflow:hidden;min-width:60px}
-  .bar span{display:block;height:100%;border-radius:999px;
-    background:linear-gradient(90deg,#4E8C74,#2F5D50)}
+  .att-summary{display:grid;grid-template-columns:minmax(200px,1fr) minmax(300px,1.35fr);gap:18px;margin-top:12px}
+  @media(max-width:820px){.att-summary{grid-template-columns:1fr}}
+  .att-names{max-height:330px;overflow-y:auto;padding-right:6px;font-size:14.5px;line-height:1.55}
+  .att-chart{background:var(--pine-soft);border-radius:12px;padding:12px 14px}
+  .chart-head{display:flex;flex-direction:column;gap:1px;margin-bottom:4px}
+  .chart-head b{font-family:"Gowun Batang","Noto Sans KR",serif;color:var(--pine-deep);font-size:15px}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);
     font-family:"Noto Sans KR",-apple-system,"Malgun Gothic",sans-serif;font-size:15.5px;line-height:1.55}
@@ -1721,25 +1719,13 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
   const [statYear, setStatYear] = useState("");
   const year = statYear || years[0] || String(new Date().getFullYear());
 
-  const stats = useMemo(()=>{
-    const rows = Object.keys(att)
+  /* 그 해 1월 1일부터 오늘까지, 이 예배의 날짜별 출석 인원 */
+  const yearRows = useMemo(()=>
+    Object.keys(att)
       .filter(d => d.slice(0,4) === year && (att[d][svc]||[]).length)
       .sort()
-      .map(d => ({date:d, n:(att[d][svc]||[]).length}));
-    if(!rows.length) return null;
-    const ns = rows.map(r=>r.n);
-    const sum = ns.reduce((a,b)=>a+b,0);
-    const max = Math.max(...ns), min = Math.min(...ns);
-    const byMonth = {};
-    rows.forEach(r=>{
-      const mo = r.date.slice(5,7);
-      if(!byMonth[mo]) byMonth[mo] = {cnt:0, sum:0, max:0};
-      byMonth[mo].cnt++; byMonth[mo].sum += r.n;
-      if(r.n > byMonth[mo].max) byMonth[mo].max = r.n;
-    });
-    return {rows, sum, avg: Math.round(sum/rows.length), max, min, byMonth,
-            maxDate: rows.find(r=>r.n===max).date, minDate: rows.find(r=>r.n===min).date};
-  }, [att, svc, year]);
+      .map(d => ({date:d, n:(att[d][svc]||[]).length})),
+  [att, svc, year]);
 
   /* 속별 · 교회학교 부서별 편성 */
   const groups = useMemo(()=>{
@@ -1877,97 +1863,92 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
       </div>
 
       <div className="panel">
-        <h2>{date} ({weekdayOf(date)}) {svcObj.label} 출석자
-          <span className="muted small"> {checked.length}명</span></h2>
-        {checked.length===0
-          ? <p className="empty">아직 체크된 분이 없습니다.</p>
-          : <React.Fragment>
-              {groups.filter(g=>g.items.some(m=>checked.includes(m.id))).map(g=>{
-                const on = g.items.filter(m=>checked.includes(m.id));
-                return (
-                  <div key={g.key} style={{marginBottom:10}}>
-                    <div className="row small" style={{gap:6, alignItems:"baseline"}}>
-                      <b style={{color:"var(--pine-deep)"}}>{g.label}</b>
-                      <span className="muted">{on.length}명</span>
-                    </div>
-                    <div style={{marginTop:2}}>{on.map(m=>m.name).join(", ")}</div>
-                  </div>);
-              })}
-              <p className="muted small" style={{marginTop:10, marginBottom:0}}>
-                날짜를 바꾸면 그날 출석하신 분들의 명단이 나옵니다.</p>
-            </React.Fragment>}
-      </div>
-
-      <div className="panel">
-        <h2>{svcObj.label} 최근 기록</h2>
-        {recent.length===0 ? <p className="empty">아직 기록이 없습니다.</p> :
-          <div className="tbl-wrap"><table>
-            <thead><tr><th>날짜</th><th>출석 인원</th><th></th></tr></thead>
-            <tbody>{recent.map(d=>(
-              <tr key={d}>
-                <td style={{whiteSpace:"nowrap"}}>{d} ({weekdayOf(d)})</td>
-                <td><b style={{color:"var(--pine)"}}>{(att[d][svc]||[]).length}</b>명</td>
-                <td><button className="btn sm ghost" onClick={()=>setDate(d)}>열기</button></td>
-              </tr>))}</tbody></table></div>}
-        <p className="muted small" style={{marginTop:10, marginBottom:0}}>
-          '열기'를 누르면 그날 출석하신 분들을 하나하나 확인하실 수 있습니다.</p>
-      </div>
-
-      <div className="panel">
-        <div className="row" style={{alignItems:"baseline", gap:10}}>
-          <h2 style={{margin:0}}>{svcObj.label} 출석 통계</h2>
-          {years.length>0 &&
+        <div className="row" style={{alignItems:"baseline", gap:10, flexWrap:"wrap"}}>
+          <h2 style={{margin:0}}>{date} ({weekdayOf(date)}) {svcObj.label} 출석자
+            <span className="muted small"> {checked.length}명</span></h2>
+          {years.length>1 &&
             <select value={year} onChange={e=>setStatYear(e.target.value)} style={{marginLeft:"auto"}}>
-              {years.map(y=><option key={y} value={y}>{y}년</option>)}
+              {years.map(y=><option key={y} value={y}>{y}년 흐름</option>)}
             </select>}
         </div>
-        {!stats ? <p className="empty" style={{marginTop:12}}>{year}년 {svcObj.label} 기록이 아직 없습니다.</p> :
-        <React.Fragment>
-          <div className="stat-cards">
-            <div className="stat-card"><span className="lb">드린 횟수</span><b>{stats.rows.length}회</b></div>
-            <div className="stat-card"><span className="lb">평균 출석</span><b>{stats.avg}명</b></div>
-            <div className="stat-card"><span className="lb">가장 많은 날</span><b>{stats.max}명</b>
-              <span className="sub">{stats.maxDate.slice(5).replace("-","월 ")}일</span></div>
-            <div className="stat-card"><span className="lb">가장 적은 날</span><b>{stats.min}명</b>
-              <span className="sub">{stats.minDate.slice(5).replace("-","월 ")}일</span></div>
-            <div className="stat-card"><span className="lb">연 누적</span><b>{stats.sum.toLocaleString()}명</b></div>
+
+        <div className="att-summary">
+          <div className="att-names">
+            {checked.length===0
+              ? <p className="empty" style={{margin:0}}>아직 체크된 분이 없습니다.</p>
+              : groups.filter(g=>g.items.some(m=>checked.includes(m.id))).map(g=>{
+                  const on = g.items.filter(m=>checked.includes(m.id));
+                  return (
+                    <div key={g.key} style={{marginBottom:9}}>
+                      <div className="row small" style={{gap:6, alignItems:"baseline"}}>
+                        <b style={{color:"var(--pine-deep)"}}>{g.label}</b>
+                        <span className="muted">{on.length}명</span>
+                      </div>
+                      <div style={{marginTop:2}}>{on.map(m=>m.name).join(", ")}</div>
+                    </div>);
+                })}
           </div>
-
-          <h3 style={{marginBottom:6}}>월별 흐름</h3>
-          <div className="tbl-wrap"><table>
-            <thead><tr><th>월</th><th>횟수</th><th>평균</th><th>최고</th><th style={{width:"45%"}}>흐름</th></tr></thead>
-            <tbody>{Array.from({length:12},(_,i)=>String(i+1).padStart(2,"0"))
-              .filter(mo=>stats.byMonth[mo]).map(mo=>{
-                const b = stats.byMonth[mo], avg = Math.round(b.sum/b.cnt);
-                return (
-                  <tr key={mo}>
-                    <td style={{whiteSpace:"nowrap"}}>{Number(mo)}월</td>
-                    <td>{b.cnt}회</td>
-                    <td><b style={{color:"var(--pine)"}}>{avg}</b>명</td>
-                    <td className="muted">{b.max}명</td>
-                    <td><div className="bar"><span style={{width:(avg/stats.max*100)+"%"}}/></div></td>
-                  </tr>);
-              })}</tbody></table></div>
-
-          <h3 style={{marginBottom:6, marginTop:16}}>날짜별 기록</h3>
-          <div className="tbl-wrap" style={{maxHeight:320, overflowY:"auto"}}><table>
-            <thead><tr><th>날짜</th><th>인원</th><th>지난 예배 대비</th><th style={{width:"40%"}}>흐름</th></tr></thead>
-            <tbody>{[...stats.rows].reverse().map((r,i,arr)=>{
-              const prev = arr[i+1];
-              const diff = prev ? r.n - prev.n : null;
-              return (
-                <tr key={r.date}>
-                  <td style={{whiteSpace:"nowrap"}}>{r.date.slice(5).replace("-","월 ")}일</td>
-                  <td><b>{r.n}</b>명</td>
-                  <td className="muted small">{diff===null ? "—" :
-                    diff>0 ? "▲ " + diff : diff<0 ? "▼ " + Math.abs(diff) : "— 0"}</td>
-                  <td><div className="bar"><span style={{width:(r.n/stats.max*100)+"%"}}/></div></td>
-                </tr>);
-            })}</tbody></table></div>
-          <p className="muted small" style={{marginTop:10, marginBottom:0}}>
-            {year}년 1월 1일부터 12월 31일까지 {svcObj.label} 기록만 모은 것입니다. 예배 종류를 바꾸면 그 예배의 통계가 나옵니다.</p>
-        </React.Fragment>}
+          <LineChart rows={yearRows} year={year} label={svcObj.label} today={date}/>
+        </div>
       </div>
+    </div>
+  );
+}
+
+/* ───────── 연간 출석 흐름 (꺾은선) ───────── */
+function LineChart({rows, year, label, today}){
+  if(!rows || rows.length===0)
+    return <div className="att-chart"><p className="empty" style={{margin:0}}>{year}년 {label} 기록이 아직 없습니다.</p></div>;
+
+  const W = 560, H = 250, L = 42, R = 14, T = 18, B = 34;
+  const iw = W - L - R, ih = H - T - B;
+  const ns = rows.map(r=>r.n);
+  const hi = Math.max(...ns), lo = Math.min(...ns);
+  const top = Math.ceil((hi * 1.12) / 10) * 10 || 10;
+  const x = i => rows.length===1 ? L + iw/2 : L + (i/(rows.length-1)) * iw;
+  const y = n => T + ih - (n/top) * ih;
+  const pts = rows.map((r,i)=>[x(i), y(r.n)]);
+  const line = pts.map((p,i)=>(i?"L":"M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const area = line + " L " + pts[pts.length-1][0].toFixed(1) + " " + (T+ih) + " L " + pts[0][0].toFixed(1) + " " + (T+ih) + " Z";
+  const ticks = [0, Math.round(top/2), top];
+  const avg = Math.round(ns.reduce((a,b)=>a+b,0)/ns.length);
+  /* 가로 눈금은 달이 바뀌는 지점에만 */
+  const monthTicks = rows.map((r,i)=>({i, mo:r.date.slice(5,7)}))
+    .filter((t,i,a)=> i===0 || t.mo !== a[i-1].mo);
+
+  return (
+    <div className="att-chart">
+      <div className="chart-head">
+        <b>{year}년 {label} 출석 흐름</b>
+        <span className="muted small">{rows.length}회 · 평균 {avg}명 · 최고 {hi}명 · 최저 {lo}명</span>
+      </div>
+      <svg viewBox={"0 0 " + W + " " + H} style={{width:"100%", height:"auto"}}>
+        <defs>
+          <linearGradient id="attFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#2F5D50" stopOpacity="0.22"/>
+            <stop offset="100%" stopColor="#2F5D50" stopOpacity="0.02"/>
+          </linearGradient>
+        </defs>
+        {ticks.map(t=>(
+          <g key={t}>
+            <line x1={L} y1={y(t)} x2={W-R} y2={y(t)} stroke="#E1DFD2" strokeWidth="1"/>
+            <text x={L-8} y={y(t)+4} textAnchor="end" fontSize="11" fill="#6C7A72">{t}</text>
+          </g>))}
+        <line x1={L} y1={y(avg)} x2={W-R} y2={y(avg)} stroke="#B8912F" strokeWidth="1.2" strokeDasharray="5 4"/>
+        <text x={W-R} y={y(avg)-5} textAnchor="end" fontSize="10.5" fill="#8C6C1E">평균 {avg}</text>
+        <path d={area} fill="url(#attFill)"/>
+        <path d={line} fill="none" stroke="#2F5D50" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>
+        {rows.map((r,i)=>(
+          <g key={r.date}>
+            <circle cx={x(i)} cy={y(r.n)} r={r.date===today ? 5.5 : 3.4}
+              fill={r.date===today ? "#B8912F" : "#FCFBF5"} stroke="#2F5D50" strokeWidth="2"/>
+            {(rows.length<=14 || r.n===hi || r.n===lo || r.date===today) &&
+              <text x={x(i)} y={y(r.n)-10} textAnchor="middle" fontSize="10.5" fill="#1E3F36">{r.n}</text>}
+          </g>))}
+        {monthTicks.map(t=>(
+          <text key={t.mo} x={x(t.i)} y={H-12} textAnchor="middle" fontSize="11" fill="#6C7A72">{Number(t.mo)}월</text>
+        ))}
+      </svg>
     </div>
   );
 }
