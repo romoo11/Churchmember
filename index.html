@@ -301,6 +301,7 @@ const headStyle = key => {
   const k = String(key);
   if(k === "MIN") return {background:"linear-gradient(135deg,#B8912F,#8C6C1E)", ico:"✝"};
   if(k === "SAMO") return {background:"linear-gradient(135deg,#9C7BA6,#75577F)", ico:"❦"};
+  if(k === "GUEST") return {background:"linear-gradient(135deg,#7A8A94,#57666F)", ico:"✦"};
   if(k.indexOf("S_")===0){
     const dep = k.slice(2).split("_")[0];
     const s = DEPT_STYLE[dep] || {};
@@ -367,6 +368,12 @@ const scopeKeyOf = m => {
   if(d) return "S_" + d.key;
   return "zz";
 };
+/* 미소속 방문자 자리 — 등록하지 않은 분이 예배에 오셨을 때 인원만 세기 위한 칸 */
+const GUESTS = Array.from({length:10}, (_,i)=>({
+  id: "guest-" + (i+1), name: "무명" + (i+1), position: "방문", birth: "", gender: "",
+  memo: "", photo: "", family: [], depts: [], visits: [], prayers: [], guest: true
+}));
+
 const ATT_ONLY = "ATT_ONLY";   /* 예배 출석 체크만 (성도 전체 · 교회학교 제외) */
 const SCOPE_LIST = () => [
   [ATT_ONLY, "예배 출석 체크만 (성도 전체 · 교회학교 제외)"],
@@ -1707,7 +1714,8 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
       saveAtt(date, svc, []);
   };
 
-  const list = members.filter(m=>!isDeceased(m)).filter(m=>!q || m.name.includes(q)).sort(koSort);
+  const list = [...members.filter(m=>!isDeceased(m)).sort(koSort), ...GUESTS]
+    .filter(m=>!q || m.name.includes(q));
   const recent = Object.keys(att).filter(d=>(att[d][svc]||[]).length).sort().reverse().slice(0,8);
 
   /* 연도별 통계 — 예배 종류마다 따로, 1월 1일 ~ 12월 31일 */
@@ -1747,9 +1755,11 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
         const bn = bucket("S_"+s.key+"_none", "미배정"); bn.dept = s; bn.cls = true; bn.none = true;
       } else { const b = bucket("S_"+s.key, "교회학교 · "+s.label); b.dept = s; }
     });
+    bucket("GUEST", "미소속 (등록하지 않은 방문자)");
     bucket("zz", "편성 없음");
 
     list.forEach(m=>{
+      if(m.guest){ map["GUEST"].items.push(m); return; }
       if(isMinister(m)){ map["MIN"].items.push(m); return; }
       if(isSamo(m)){ map["SAMO"].items.push(m); return; }
       const s = sokOf(m);
