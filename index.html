@@ -39,6 +39,15 @@
   .cls-head.none{background:#EFEEE6;border-left-color:#B8B4A4}
   .cls-head.none .nm{color:#6C7A72}
   .chip.secret{background:#7E2F20;color:#fff}
+  /* 출석 통계 */
+  .stat-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:14px 0 18px}
+  .stat-card{background:var(--pine-soft);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+  .stat-card .lb{font-size:12.5px;color:var(--muted)}
+  .stat-card b{font-size:22px;color:var(--pine-deep);font-family:"Gowun Batang","Noto Sans KR",serif}
+  .stat-card .sub{font-size:12px;color:var(--muted)}
+  .bar{background:#E8E6DA;border-radius:999px;height:12px;overflow:hidden;min-width:60px}
+  .bar span{display:block;height:100%;border-radius:999px;
+    background:linear-gradient(90deg,#4E8C74,#2F5D50)}
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);
     font-family:"Noto Sans KR",-apple-system,"Malgun Gothic",sans-serif;font-size:15.5px;line-height:1.55}
@@ -1703,6 +1712,35 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
   const list = members.filter(m=>!isDeceased(m)).filter(m=>!q || m.name.includes(q)).sort(koSort);
   const recent = Object.keys(att).filter(d=>(att[d][svc]||[]).length).sort().reverse().slice(0,8);
 
+  /* 연도별 통계 — 예배 종류마다 따로, 1월 1일 ~ 12월 31일 */
+  const years = useMemo(()=>{
+    const s = new Set();
+    Object.keys(att).forEach(d=>{ SERVICES.forEach(v=>{ if((att[d][v.key]||[]).length) s.add(d.slice(0,4)); }); });
+    return [...s].sort().reverse();
+  }, [att]);
+  const [statYear, setStatYear] = useState("");
+  const year = statYear || years[0] || String(new Date().getFullYear());
+
+  const stats = useMemo(()=>{
+    const rows = Object.keys(att)
+      .filter(d => d.slice(0,4) === year && (att[d][svc]||[]).length)
+      .sort()
+      .map(d => ({date:d, n:(att[d][svc]||[]).length}));
+    if(!rows.length) return null;
+    const ns = rows.map(r=>r.n);
+    const sum = ns.reduce((a,b)=>a+b,0);
+    const max = Math.max(...ns), min = Math.min(...ns);
+    const byMonth = {};
+    rows.forEach(r=>{
+      const mo = r.date.slice(5,7);
+      if(!byMonth[mo]) byMonth[mo] = {cnt:0, sum:0, max:0};
+      byMonth[mo].cnt++; byMonth[mo].sum += r.n;
+      if(r.n > byMonth[mo].max) byMonth[mo].max = r.n;
+    });
+    return {rows, sum, avg: Math.round(sum/rows.length), max, min, byMonth,
+            maxDate: rows.find(r=>r.n===max).date, minDate: rows.find(r=>r.n===min).date};
+  }, [att, svc, year]);
+
   /* 속별 · 교회학교 부서별 편성 */
   const groups = useMemo(()=>{
     const map = {}, order = [];
@@ -1839,21 +1877,96 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
       </div>
 
       <div className="panel">
+        <h2>{date} ({weekdayOf(date)}) {svcObj.label} 출석자
+          <span className="muted small"> {checked.length}명</span></h2>
+        {checked.length===0
+          ? <p className="empty">아직 체크된 분이 없습니다.</p>
+          : <React.Fragment>
+              {groups.filter(g=>g.items.some(m=>checked.includes(m.id))).map(g=>{
+                const on = g.items.filter(m=>checked.includes(m.id));
+                return (
+                  <div key={g.key} style={{marginBottom:10}}>
+                    <div className="row small" style={{gap:6, alignItems:"baseline"}}>
+                      <b style={{color:"var(--pine-deep)"}}>{g.label}</b>
+                      <span className="muted">{on.length}명</span>
+                    </div>
+                    <div style={{marginTop:2}}>{on.map(m=>m.name).join(", ")}</div>
+                  </div>);
+              })}
+              <p className="muted small" style={{marginTop:10, marginBottom:0}}>
+                날짜를 바꾸면 그날 출석하신 분들의 명단이 나옵니다.</p>
+            </React.Fragment>}
+      </div>
+
+      <div className="panel">
         <h2>{svcObj.label} 최근 기록</h2>
         {recent.length===0 ? <p className="empty">아직 기록이 없습니다.</p> :
           <div className="tbl-wrap"><table>
-            <thead><tr><th>날짜</th><th>출석 인원</th><th>출석자</th><th></th></tr></thead>
-            <tbody>{recent.map(d=>{
-              const ids = att[d][svc];
-              const names = ids.map(id=>{const m=members.find(x=>x.id===id); return m?m.name:null;}).filter(Boolean);
+            <thead><tr><th>날짜</th><th>출석 인원</th><th></th></tr></thead>
+            <tbody>{recent.map(d=>(
+              <tr key={d}>
+                <td style={{whiteSpace:"nowrap"}}>{d} ({weekdayOf(d)})</td>
+                <td><b style={{color:"var(--pine)"}}>{(att[d][svc]||[]).length}</b>명</td>
+                <td><button className="btn sm ghost" onClick={()=>setDate(d)}>열기</button></td>
+              </tr>))}</tbody></table></div>}
+        <p className="muted small" style={{marginTop:10, marginBottom:0}}>
+          '열기'를 누르면 그날 출석하신 분들을 하나하나 확인하실 수 있습니다.</p>
+      </div>
+
+      <div className="panel">
+        <div className="row" style={{alignItems:"baseline", gap:10}}>
+          <h2 style={{margin:0}}>{svcObj.label} 출석 통계</h2>
+          {years.length>0 &&
+            <select value={year} onChange={e=>setStatYear(e.target.value)} style={{marginLeft:"auto"}}>
+              {years.map(y=><option key={y} value={y}>{y}년</option>)}
+            </select>}
+        </div>
+        {!stats ? <p className="empty" style={{marginTop:12}}>{year}년 {svcObj.label} 기록이 아직 없습니다.</p> :
+        <React.Fragment>
+          <div className="stat-cards">
+            <div className="stat-card"><span className="lb">드린 횟수</span><b>{stats.rows.length}회</b></div>
+            <div className="stat-card"><span className="lb">평균 출석</span><b>{stats.avg}명</b></div>
+            <div className="stat-card"><span className="lb">가장 많은 날</span><b>{stats.max}명</b>
+              <span className="sub">{stats.maxDate.slice(5).replace("-","월 ")}일</span></div>
+            <div className="stat-card"><span className="lb">가장 적은 날</span><b>{stats.min}명</b>
+              <span className="sub">{stats.minDate.slice(5).replace("-","월 ")}일</span></div>
+            <div className="stat-card"><span className="lb">연 누적</span><b>{stats.sum.toLocaleString()}명</b></div>
+          </div>
+
+          <h3 style={{marginBottom:6}}>월별 흐름</h3>
+          <div className="tbl-wrap"><table>
+            <thead><tr><th>월</th><th>횟수</th><th>평균</th><th>최고</th><th style={{width:"45%"}}>흐름</th></tr></thead>
+            <tbody>{Array.from({length:12},(_,i)=>String(i+1).padStart(2,"0"))
+              .filter(mo=>stats.byMonth[mo]).map(mo=>{
+                const b = stats.byMonth[mo], avg = Math.round(b.sum/b.cnt);
+                return (
+                  <tr key={mo}>
+                    <td style={{whiteSpace:"nowrap"}}>{Number(mo)}월</td>
+                    <td>{b.cnt}회</td>
+                    <td><b style={{color:"var(--pine)"}}>{avg}</b>명</td>
+                    <td className="muted">{b.max}명</td>
+                    <td><div className="bar"><span style={{width:(avg/stats.max*100)+"%"}}/></div></td>
+                  </tr>);
+              })}</tbody></table></div>
+
+          <h3 style={{marginBottom:6, marginTop:16}}>날짜별 기록</h3>
+          <div className="tbl-wrap" style={{maxHeight:320, overflowY:"auto"}}><table>
+            <thead><tr><th>날짜</th><th>인원</th><th>지난 예배 대비</th><th style={{width:"40%"}}>흐름</th></tr></thead>
+            <tbody>{[...stats.rows].reverse().map((r,i,arr)=>{
+              const prev = arr[i+1];
+              const diff = prev ? r.n - prev.n : null;
               return (
-                <tr key={d}>
-                  <td style={{whiteSpace:"nowrap"}}>{d} ({weekdayOf(d)})</td>
-                  <td><b style={{color:"var(--pine)"}}>{names.length}</b>명</td>
-                  <td>{names.join(", ")}</td>
-                  <td><button className="btn sm ghost" onClick={()=>setDate(d)}>열기</button></td>
+                <tr key={r.date}>
+                  <td style={{whiteSpace:"nowrap"}}>{r.date.slice(5).replace("-","월 ")}일</td>
+                  <td><b>{r.n}</b>명</td>
+                  <td className="muted small">{diff===null ? "—" :
+                    diff>0 ? "▲ " + diff : diff<0 ? "▼ " + Math.abs(diff) : "— 0"}</td>
+                  <td><div className="bar"><span style={{width:(r.n/stats.max*100)+"%"}}/></div></td>
                 </tr>);
-            })}</tbody></table></div>}
+            })}</tbody></table></div>
+          <p className="muted small" style={{marginTop:10, marginBottom:0}}>
+            {year}년 1월 1일부터 12월 31일까지 {svcObj.label} 기록만 모은 것입니다. 예배 종류를 바꾸면 그 예배의 통계가 나옵니다.</p>
+        </React.Fragment>}
       </div>
     </div>
   );
