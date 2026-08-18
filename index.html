@@ -257,7 +257,9 @@ const SERVICES = [
   {key:"fri", label:"금요기도회", dow:5},
   {key:"cls", label:"속회", dow:null},
 ];
-const POSITIONS = ["담임목사","부목사","전도사","사모","원로 장로","장로","원로 권사","권사","원로 집사","안수집사","집사","성도","청년","학생","새가족"];
+const POSITIONS = ["담임목사","부목사","전도사","사모","원로 장로","장로","원로 권사","권사","원로 집사","안수집사","집사","성도","청년","학생","새가족","소천"];
+/* 소천하신 분 — 출석 명단에서 제외 (명부에는 그대로 남음) */
+const isDeceased = m => (m && m.position) === "소천" || /소천/.test((m && m.memo) || "");
 const PURPOSES = ["정기심방","새가족심방","환우심방","경조사","상담","전도","기도","기타"];
 const RELATIONS = ["남편","아내","배우자","아들","딸","자녀","며느리","사위","손자","손녀","외손자","외손녀","조카","아버지","어머니","할아버지","할머니","형","오빠","누나","언니","남동생","여동생","형제","자매","삼촌","고모","이모","외삼촌","기타"];
 
@@ -324,11 +326,16 @@ const SCHOOL_DEPTS = [
 /* 교회학교 최고 나이 이하는 속 편성에서 제외 (현재 29세 이하) */
 const schoolMaxAge = () => Math.max(...SCHOOL_DEPTS.map(s=>s.max));
 
+const MINISTERS = ["담임목사","부목사","전도사"];   /* 교역자 — 속·부서와 별도로 묶음 */
+const isMinister = m => MINISTERS.includes(m && m.position);
+const isSamo = m => (m && m.position) === "사모";   /* 사모 — 속회와 별도 항목 */
+/* 청년(직분이 '청년'이거나 메모에 청년부)은 나이와 상관없이 청년부 */
+const isYoungAdult = m => (m && m.position) === "청년" || /청년부/.test((m && m.memo) || "");
+
 const SOK_F = [[1948,1],[1954,2],[1958,3],[1962,4],[1968,5],[1973,6],[9999,7]];
-const SOK_M = [[1955,1],[1967,2],[9999,3]];
+const SOK_M = [[1954,1],[1967,2],[9999,3]];   /* 1남 ~1954 · 2남 1955~1967 · 3남 1968~ */
 function sokOf(m){
-  /* 청년(직분이 '청년'이거나 메모에 청년부)은 속이 아닌 청년부로 */
-  if((m && m.position) === "청년" || /청년부/.test((m && m.memo) || "")) return null;
+  if(isMinister(m) || isSamo(m) || isYoungAdult(m)) return null;   /* 교역자·사모·청년은 속 편성 제외 */
   const memo = m.memo || "";
   let t = memo.match(/([0-9])\s*여선교회/); if(t) return {g:"여", n:Number(t[1])};
   t = memo.match(/([0-9])\s*남선교회/); if(t) return {g:"남", n:Number(t[1])};
@@ -353,10 +360,6 @@ const scopeKeyOf = m => {
   if(d) return "S_" + d.key;
   return "zz";
 };
-const MINISTERS = ["담임목사","부목사","전도사"];   /* 교역자 — 속·부서와 별도로 묶음 */
-const isMinister = m => MINISTERS.includes(m && m.position);
-const isSamo = m => (m && m.position) === "사모";   /* 사모 — 속회와 별도 항목 */
-
 const ATT_ONLY = "ATT_ONLY";   /* 예배 출석 체크만 (성도 전체 · 교회학교 제외) */
 const SCOPE_LIST = () => [
   [ATT_ONLY, "예배 출석 체크만 (성도 전체 · 교회학교 제외)"],
@@ -386,9 +389,7 @@ const inScope = (m, k) => {
 
 const schoolDeptOf = m => {
   if(isMinister(m) || isSamo(m)) return null;
-  /* 직분이 '청년'이거나 메모에 청년부로 적혀 있으면 나이와 상관없이 청년부 */
-  if((m && m.position) === "청년" || /청년부/.test((m && m.memo) || ""))
-    return SCHOOL_DEPTS.find(s => s.key === "young") || null;
+  if(isYoungAdult(m)) return SCHOOL_DEPTS.find(s => s.key === "young") || null;
   const a = koAge(m.birth);
   if(a === null) return null;
   return SCHOOL_DEPTS.find(s => a >= s.min && a <= s.max) || null;
@@ -1699,7 +1700,7 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
       saveAtt(date, svc, []);
   };
 
-  const list = members.filter(m=>!q || m.name.includes(q)).sort(koSort);
+  const list = members.filter(m=>!isDeceased(m)).filter(m=>!q || m.name.includes(q)).sort(koSort);
   const recent = Object.keys(att).filter(d=>(att[d][svc]||[]).length).sort().reverse().slice(0,8);
 
   /* 속별 · 교회학교 부서별 편성 */
