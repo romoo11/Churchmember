@@ -1321,9 +1321,8 @@ function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses, c
     return SCHOOL.map(s=>({
       key:s.key, label:s.label,
       items: list.filter(m=>{
-        if(isMinister(m) || isSamo(m)) return false;       /* 교역자·사모는 교회학교 명부에서 제외 */
-        const a = koAge(m.birth);
-        return a!==null && a>=s.min && a<=s.max;
+        const d = schoolDeptOf(m);                          /* 청년 표시·교역자·사모까지 함께 판정 */
+        return d && d.key === s.key;
       })
     }));
   }, [list]);
