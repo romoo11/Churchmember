@@ -1015,7 +1015,7 @@ function App({sb, profile, logout}){
           memView.mode==="form" ? <MemberForm init={memView.id ? byId(memView.id) : null}
               onCancel={()=>setMemView(memView.id ? {mode:"detail", id:memView.id} : {mode:"list"})}
               onSave={(m)=>{ saveMemberRow(m); setMemView({mode:"detail", id:m.id}); }}/> :
-          <MemberDetail m={viewMembers.find(x=>x.id===memView.id)} att={att}
+          <MemberDetail m={viewMembers.find(x=>x.id===memView.id)} att={att} specials={specials}
             setMemView={v=>{ pushHistory({view:"members", memView}); setMemView(v); }}
             canEdit={canEdit || canEditMember(viewMembers.find(x=>x.id===memView.id))}
             canDelete={canEdit}
@@ -1564,7 +1564,7 @@ function MemberForm({init, onSave, onCancel}){
 }
 
 /* ───────── 교인 상세 ───────── */
-function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, allMembers, openMember, limited, outside, canPray, meName, meId}){
+function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, allMembers, openMember, limited, outside, canPray, meName, meId, specials}){
   const [pSecret, setPSecret] = useState(false);
   const visiblePrayers = (m && m.prayers ? m.prayers : []).filter(p => !limited || !p.secret);
   const [vWhen, setVWhen] = useState(nowLocal());
@@ -1576,12 +1576,13 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
   const age = calcAge(m.birth);
   const year = String(new Date().getFullYear());
 
-  const attStat = SERVICES.map(s=>{
+  const attStat = [...SERVICES, ...(specials||[])].map(s=>{
     const dates = Object.keys(att).filter(d => (att[d][s.key]||[]).includes(m.id)).sort();
-    return {label:s.label, total:dates.length,
+    return {key:s.key, label:s.label, special:!SERVICES.some(x=>x.key===s.key),
+      total:dates.length,
       year:dates.filter(d=>d.startsWith(year)).length,
       last:dates.length ? dates[dates.length-1] : null};
-  });
+  }).filter(s => !s.special || s.total > 0);   /* 특별예배는 참석 기록이 있을 때만 */
 
   const curDepts = (m.depts||[]).filter(d=>d.current);
   const pastDepts = (m.depts||[]).filter(d=>!d.current);
@@ -1662,7 +1663,7 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
         <div className="tbl-wrap"><table>
           <thead><tr><th>예배</th><th>올해 출석</th><th>누적</th><th>최근 출석일</th></tr></thead>
           <tbody>{attStat.map(s=>(
-            <tr key={s.label}><td>{s.label}</td>
+            <tr key={s.key}><td>{s.special && "✦ "}{s.label}</td>
               <td><b style={{color:"var(--pine)"}}>{s.year}</b>회</td>
               <td>{s.total}회</td>
               <td>{s.last ? `${s.last} (${weekdayOf(s.last)})` : <span className="muted">기록 없음</span>}</td></tr>))}
