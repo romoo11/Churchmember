@@ -42,6 +42,11 @@
   .svc-add{border:1.5px dashed var(--pine);background:#fff;border-radius:999px;padding:8px 16px;
     font-weight:600;color:var(--pine)}
   .svc-add:hover{background:var(--pine-soft)}
+  .svc-past{border:1.5px solid var(--line);background:#F0EEE4;border-radius:999px;padding:8px 16px;
+    font-weight:600;color:var(--muted)}
+  .svc-past:hover{background:#E8E6DA}
+  .sp-past-box{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:#F0EEE4;
+    border-radius:10px;padding:10px 14px;margin-bottom:12px}
   .sp-note{display:flex;align-items:center;gap:8px;background:#F1EDF6;border-left:5px solid #7B5EA7;
     border-radius:10px;padding:9px 14px;margin-bottom:12px;flex-wrap:wrap}
   /* 달력 */
@@ -1756,13 +1761,25 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
 /* ───────── 출석 체크 ───────── */
 function Attendance({members, att, saveAtt, canEdit, schoolClasses, specials, saveSpecials, isAdmin}){
   const [svc, setSvc] = useState("sun");
-  /* 기간이 지나지 않은 특별예배까지 함께 보여줌 */
-  const allServices = useMemo(()=>{
-    const sp = (specials||[]).map(s=>({key:s.key, label:s.label, dow:null, special:true, from:s.from, to:s.to}));
-    return [...SERVICES, ...sp];
-  }, [specials]);
+  const [showPast, setShowPast] = useState(false);   /* 지난 특별예배 펼치기 */
+  /* 특별예배: 기간이 끝나지 않은 것만 탭에 두고, 지난 것은 접어 둔다 */
+  const spAll = useMemo(()=>
+    (specials||[]).map(s=>({key:s.key, label:s.label, dow:null, special:true, from:s.from, to:s.to}))
+      .sort((a,b)=>(b.from||"").localeCompare(a.from||"")),
+  [specials]);
+  const t0 = todayStr();
+  const spNow  = spAll.filter(s => s.to >= t0);      /* 진행 중이거나 앞으로 있을 것 */
+  const spPast = spAll.filter(s => s.to <  t0);      /* 이미 끝난 것 */
+  const allServices = useMemo(()=> [...SERVICES, ...spAll], [spAll]);
   const svcObj = allServices.find(s=>s.key===svc) || SERVICES[0];
   const [spForm, setSpForm] = useState(null);
+  const pickSvc = s => {
+    setSvc(s.key);
+    if(s.special){
+      const t = todayStr();
+      setDate(t >= s.from && t <= s.to ? t : s.to < t ? s.to : s.from);
+    } else if(s.dow !== null) setDate(lastWeekday(s.dow));
+  };
   const [date, setDate] = useState(()=> lastWeekday(0));
   const [q, setQ] = useState("");
 
@@ -1882,18 +1899,29 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses, specials, sa
       <div className="panel">
         <h2>출석 체크</h2>
         <div className="svc-tabs">
-          {allServices.map(s=>(
-            <button key={s.key} className={svc===s.key?"on":""} onClick={()=>{
-              setSvc(s.key);
-              if(s.special){
-                const t = todayStr();
-                setDate(t >= s.from && t <= s.to ? t : s.from);   /* 기간 안이면 오늘, 아니면 첫날 */
-              } else if(s.dow !== null) setDate(lastWeekday(s.dow));
-            }}>{s.special && "✦ "}{s.label}</button>
+          {[...SERVICES, ...spNow].map(s=>(
+            <button key={s.key} className={svc===s.key?"on":""} onClick={()=>pickSvc(s)}>
+              {s.special && "✦ "}{s.label}</button>
           ))}
+          {/* 지난 특별예배를 보고 있으면 그 탭도 함께 표시 */}
+          {svcObj.special && spPast.some(s=>s.key===svc) &&
+            <button className="on" onClick={()=>{}}>✦ {svcObj.label}</button>}
+          {spPast.length>0 &&
+            <button className="svc-past" onClick={()=>setShowPast(!showPast)}>
+              {showPast ? "지난 특별예배 접기" : "지난 특별예배 " + spPast.length + "건"}</button>}
           {isAdmin && <button className="svc-add" title="특별예배 추가"
             onClick={()=>setSpForm({key:"", label:"", from:todayStr(), to:todayStr()})}>+ 특별예배</button>}
         </div>
+
+        {showPast && spPast.length>0 &&
+          <div className="sp-past-box">
+            <span className="muted small">지난 특별예배</span>
+            {spPast.map(s=>(
+              <button key={s.key} className={"btn sm"+(svc===s.key?"":" ghost")}
+                onClick={()=>{ pickSvc(s); setShowPast(false); }}>
+                {s.label} <span className="muted small">{s.from.slice(2).replace(/-/g,".")}</span>
+              </button>))}
+          </div>}
 
         {spForm && isAdmin &&
           <div className="panel" style={{padding:"14px 16px", marginBottom:12}}>
