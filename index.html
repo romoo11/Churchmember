@@ -39,6 +39,11 @@
   .cls-head.none{background:#EFEEE6;border-left-color:#B8B4A4}
   .cls-head.none .nm{color:#6C7A72}
   .chip.secret{background:#7E2F20;color:#fff}
+  .svc-add{border:1.5px dashed var(--pine);background:#fff;border-radius:999px;padding:8px 16px;
+    font-weight:600;color:var(--pine)}
+  .svc-add:hover{background:var(--pine-soft)}
+  .sp-note{display:flex;align-items:center;gap:8px;background:#F1EDF6;border-left:5px solid #7B5EA7;
+    border-radius:10px;padding:9px 14px;margin-bottom:12px;flex-wrap:wrap}
   /* 달력 */
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
   .cal-wd{text-align:center;font-size:12.5px;color:var(--muted);font-weight:600;padding:4px 0}
@@ -677,6 +682,7 @@ function App({sb, profile, logout}){
   /* 교회학교 반: {부서키: {classes:[{id,name}], of:{교인ID:반ID}}} */
   const [schoolClasses, setSchoolClasses] = useState({});
   const [events, setEvents] = useState([]);   /* 교회 행사 [{id,date,endDate,title,place,note,kind}] */
+  const [specials, setSpecials] = useState([]);  /* 특별예배 [{key,label,from,to}] */
   const isAdmin = profile.role === "admin";
   const myScopes = scopesOf(leaders, profile.id);
   const isLeader = !isAdmin && myScopes.length > 0;             /* 속장 · 교회학교 교사 */
@@ -732,6 +738,9 @@ function App({sb, profile, logout}){
     if(!s.error){
       const cn = (s.data||[]).find(r=>r.key==="churchName");
       if(cn && cn.value) setChurchName(cn.value);
+      const sp = (s.data||[]).find(r=>r.key==="specialServices");
+      if(sp && sp.value){ try{ setSpecials(JSON.parse(sp.value)||[]); }catch(_){ setSpecials([]); } }
+      else setSpecials([]);
       const ev = (s.data||[]).find(r=>r.key==="events");
       if(ev && ev.value){ try{ setEvents(JSON.parse(ev.value)||[]); }catch(_){ setEvents([]); } }
       else setEvents([]);
@@ -852,6 +861,12 @@ function App({sb, profile, logout}){
     }
     await loadAll();
     alert(mode === "merge" ? "명단을 합쳐 넣었습니다." : "가져오기(전체 교체)가 완료되었습니다.");
+  };
+
+  const saveSpecials = async (next) => {
+    setSpecials(next);
+    const {error} = await sb.from("church_settings").upsert({key:"specialServices", value:JSON.stringify(next)});
+    if(error){ fail(error); loadAll(); }
   };
 
   const saveEvents = async (next) => {
@@ -1012,7 +1027,8 @@ function App({sb, profile, logout}){
               }
             }}/>
         )}
-        {view==="att" && <Attendance members={myMembers} att={att} saveAtt={saveAtt} canEdit={canCheckAtt} schoolClasses={schoolClasses}/>}
+        {view==="att" && <Attendance members={myMembers} att={att} saveAtt={saveAtt} canEdit={canCheckAtt}
+          schoolClasses={schoolClasses} specials={specials} saveSpecials={saveSpecials} isAdmin={isAdmin || canEdit}/>}
         {view==="visit" && (isLeader
           ? <p className="empty">심방 기록은 목회자와 관리자만 볼 수 있습니다.</p>
           : <Visits members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>)}
@@ -1738,9 +1754,15 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
 }
 
 /* ───────── 출석 체크 ───────── */
-function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
+function Attendance({members, att, saveAtt, canEdit, schoolClasses, specials, saveSpecials, isAdmin}){
   const [svc, setSvc] = useState("sun");
-  const svcObj = SERVICES.find(s=>s.key===svc);
+  /* 기간이 지나지 않은 특별예배까지 함께 보여줌 */
+  const allServices = useMemo(()=>{
+    const sp = (specials||[]).map(s=>({key:s.key, label:s.label, dow:null, special:true, from:s.from, to:s.to}));
+    return [...SERVICES, ...sp];
+  }, [specials]);
+  const svcObj = allServices.find(s=>s.key===svc) || SERVICES[0];
+  const [spForm, setSpForm] = useState(null);
   const [date, setDate] = useState(()=> lastWeekday(0));
   const [q, setQ] = useState("");
 
@@ -1764,9 +1786,9 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
   /* 연도별 통계 — 예배 종류마다 따로, 1월 1일 ~ 12월 31일 */
   const years = useMemo(()=>{
     const s = new Set();
-    Object.keys(att).forEach(d=>{ SERVICES.forEach(v=>{ if((att[d][v.key]||[]).length) s.add(d.slice(0,4)); }); });
+    Object.keys(att).forEach(d=>{ allServices.forEach(v=>{ if((att[d][v.key]||[]).length) s.add(d.slice(0,4)); }); });
     return [...s].sort().reverse();
-  }, [att]);
+  }, [att, allServices]);
   const [statYear, setStatYear] = useState("");
   const year = statYear || years[0] || String(new Date().getFullYear());
 
@@ -1860,10 +1882,62 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses}){
       <div className="panel">
         <h2>출석 체크</h2>
         <div className="svc-tabs">
-          {SERVICES.map(s=>(
-            <button key={s.key} className={svc===s.key?"on":""} onClick={()=>setSvc(s.key)}>{s.label}</button>
+          {allServices.map(s=>(
+            <button key={s.key} className={svc===s.key?"on":""} onClick={()=>{
+              setSvc(s.key);
+              if(s.special){
+                const t = todayStr();
+                setDate(t >= s.from && t <= s.to ? t : s.from);   /* 기간 안이면 오늘, 아니면 첫날 */
+              } else if(s.dow !== null) setDate(lastWeekday(s.dow));
+            }}>{s.special && "✦ "}{s.label}</button>
           ))}
+          {isAdmin && <button className="svc-add" title="특별예배 추가"
+            onClick={()=>setSpForm({key:"", label:"", from:todayStr(), to:todayStr()})}>+ 특별예배</button>}
         </div>
+
+        {spForm && isAdmin &&
+          <div className="panel" style={{padding:"14px 16px", marginBottom:12}}>
+            <h3 style={{marginTop:0}}>{spForm.key ? "특별예배 고치기" : "새 특별예배"}</h3>
+            <p className="small muted" style={{marginTop:0}}>
+              특별새벽기도회처럼 일정 기간 매일 드리는 예배를 만들 수 있습니다. 기간 안의 날짜를 골라 매일 출석을 체크하시면 됩니다.</p>
+            <div className="field"><label>이름</label>
+              <input value={spForm.label} onChange={e=>setSpForm({...spForm, label:e.target.value})}
+                placeholder="예) 특별새벽기도회, 부흥회"/></div>
+            <div className="row">
+              <div className="field" style={{flex:"1 1 150px"}}><label>시작</label>
+                <input type="date" value={spForm.from} onChange={e=>setSpForm({...spForm, from:e.target.value})}/></div>
+              <div className="field" style={{flex:"1 1 150px"}}><label>끝</label>
+                <input type="date" value={spForm.to} onChange={e=>setSpForm({...spForm, to:e.target.value})}/></div>
+            </div>
+            <div className="row" style={{gap:6}}>
+              <button className="btn" disabled={!spForm.label.trim() || !spForm.from || !spForm.to}
+                onClick={()=>{
+                  const k = spForm.key || ("sp" + Date.now().toString(36));
+                  const item = {key:k, label:spForm.label.trim(), from:spForm.from, to:spForm.to};
+                  const next = spForm.key
+                    ? (specials||[]).map(x=>x.key===k ? item : x)
+                    : [...(specials||[]), item];
+                  saveSpecials(next); setSvc(k); setDate(item.from); setSpForm(null);
+                }}>저장</button>
+              <button className="btn ghost" onClick={()=>setSpForm(null)}>취소</button>
+              {spForm.key &&
+                <button className="btn sm danger" style={{marginLeft:"auto"}} onClick={()=>{
+                  if(confirm("이 특별예배를 목록에서 지울까요?\n이미 체크한 출석 기록은 그대로 남습니다.")){
+                    saveSpecials((specials||[]).filter(x=>x.key!==spForm.key));
+                    setSvc("sun"); setSpForm(null);
+                  }
+                }}>목록에서 빼기</button>}
+            </div>
+          </div>}
+
+        {svcObj.special &&
+          <div className="sp-note">
+            <b>{svcObj.label}</b>
+            <span className="muted small"> {svcObj.from.replace(/-/g,".")} ~ {svcObj.to.replace(/-/g,".")}
+              · 모두 {Math.round((new Date(svcObj.to)-new Date(svcObj.from))/86400000)+1}일</span>
+            {isAdmin && <button className="btn sm ghost" style={{marginLeft:"auto"}}
+              onClick={()=>setSpForm({key:svcObj.key, label:svcObj.label, from:svcObj.from, to:svcObj.to})}>고치기</button>}
+          </div>}
         <div className="row">
           <input type="date" value={date} onChange={e=>setDate(e.target.value)}/>
           <span className="muted">{date && `${weekdayOf(date)}요일`}</span>
