@@ -1576,13 +1576,27 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
   const age = calcAge(m.birth);
   const year = String(new Date().getFullYear());
 
-  const attStat = [...SERVICES, ...(specials||[])].map(s=>{
-    const dates = Object.keys(att).filter(d => (att[d][s.key]||[]).includes(m.id)).sort();
-    return {key:s.key, label:s.label, special:!SERVICES.some(x=>x.key===s.key),
-      total:dates.length,
-      year:dates.filter(d=>d.startsWith(year)).length,
-      last:dates.length ? dates[dates.length-1] : null};
-  }).filter(s => !s.special || s.total > 0);   /* 특별예배는 참석 기록이 있을 때만 */
+  /* 기본 예배 + 특별예배. 출석 기록에만 남아 있는 예배(목록에서 뺀 것)도 함께 찾아 준다 */
+  const attStat = (()=>{
+    const known = [...SERVICES, ...(specials||[])];
+    const knownKeys = new Set(known.map(s=>s.key));
+    const extraKeys = new Set();
+    Object.keys(att).forEach(d=>{
+      Object.keys(att[d]||{}).forEach(k=>{
+        if(!knownKeys.has(k) && (att[d][k]||[]).includes(m.id)) extraKeys.add(k);
+      });
+    });
+    const rows = [...known, ...[...extraKeys].map(k=>({key:k, label:"지난 특별예배", from:""}))];
+    return rows.map(s=>{
+      const dates = Object.keys(att).filter(d => (att[d][s.key]||[]).includes(m.id)).sort();
+      return {key:s.key, label:s.label, from:s.from||"",
+        special:!SERVICES.some(x=>x.key===s.key),
+        total:dates.length,
+        year:dates.filter(d=>d.startsWith(year)).length,
+        last:dates.length ? dates[dates.length-1] : null};
+    }).filter(s => !s.special || s.total > 0 || String(s.from||"").startsWith(year));
+       /* 특별예배: 올해 것은 0회라도 표시, 지난 해 것은 참석 기록이 있을 때만 */
+  })();
 
   const curDepts = (m.depts||[]).filter(d=>d.current);
   const pastDepts = (m.depts||[]).filter(d=>!d.current);
