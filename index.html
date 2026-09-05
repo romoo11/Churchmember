@@ -1036,7 +1036,8 @@ function App({sb, profile, logout}){
           schoolClasses={schoolClasses} specials={specials} saveSpecials={saveSpecials} isAdmin={isAdmin || canEdit}/>}
         {view==="visit" && (isLeader
           ? <p className="empty">심방 기록은 목회자와 관리자만 볼 수 있습니다.</p>
-          : <Visits members={members} update={updateMember} openMember={openMember} canEdit={canEdit}/>)}
+          : <Visits members={members} update={updateMember} openMember={openMember} canEdit={canEdit}
+              meName={profile.name || profile.email} meId={profile.id}/>)}
         {view==="cal" && <Calendar members={members} events={events} saveEvents={saveEvents}
           canEdit={canEdit} openMember={openMember}/>}
         {view==="pray" && (isLeader
@@ -1567,6 +1568,8 @@ function MemberForm({init, onSave, onCancel}){
 function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, allMembers, openMember, limited, outside, canPray, meName, meId, specials}){
   const [pSecret, setPSecret] = useState(false);
   const visiblePrayers = (m && m.prayers ? m.prayers : []).filter(p => !limited || !p.secret);
+  /* 속장·교사는 자기가 남긴 심방 기록만 봅니다 */
+  const visibleVisits = (m && m.visits ? m.visits : []).filter(v => !limited || v.byId === meId);
   const [vWhen, setVWhen] = useState(nowLocal());
   const [vPurpose, setVPurpose] = useState("정기심방");
   const [vNote, setVNote] = useState("");
@@ -1685,22 +1688,23 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
         <p className="muted small" style={{marginBottom:0}}>출석 체크는 상단 <b>출석</b> 메뉴에서 예배별로 진행합니다.</p>
       </div>
 
-      {!limited && <div className="panel">
-        <h2>심방 기록 <span className="muted small">{(m.visits||[]).length}건</span></h2>
-        {(m.visits||[]).length>0 &&
+      {(!limited || canPray) && <div className="panel">
+        <h2>심방 기록 <span className="muted small">{visibleVisits.length}건</span></h2>
+        {visibleVisits.length>0 &&
           <div className="tbl-wrap"><table>
             <thead><tr><th>일시</th><th>목적</th><th>내용</th><th></th></tr></thead>
-            <tbody>{[...m.visits].sort((a,b)=>(b.when||"").localeCompare(a.when||"")).map(v=>(
+            <tbody>{[...visibleVisits].sort((a,b)=>(b.when||"").localeCompare(a.when||"")).map(v=>(
               <tr key={v.id}>
-                <td style={{whiteSpace:"nowrap"}}>{fmtDT(v.when)}</td>
+                <td style={{whiteSpace:"nowrap"}}>{fmtDT(v.when)}
+                  {v.by && <div className="muted small">{v.by}</div>}</td>
                 <td><span className="chip pos">{v.purpose}</span></td>
                 <td style={{whiteSpace:"pre-wrap"}}>{v.note}</td>
-                <td>{canEdit && <button className="btn sm danger" onClick={()=>{
+                <td>{(canEdit || (limited && v.byId === meId)) && <button className="btn sm danger" onClick={()=>{
                   if(confirm("이 심방 기록을 삭제할까요?")) update(o=>({...o, visits:o.visits.filter(x=>x.id!==v.id)}));
                 }}>삭제</button>}</td>
               </tr>))}
             </tbody></table></div>}
-        {canEdit && <React.Fragment>
+        {(canEdit || canPray) && <React.Fragment>
         <h3>새 심방 기록</h3>
         <div className="row">
           <input type="datetime-local" value={vWhen} onChange={e=>setVWhen(e.target.value)}/>
@@ -1711,10 +1715,13 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
         <div className="row" style={{marginTop:8}}>
           <input placeholder="내용 (선택)" value={vNote} onChange={e=>setVNote(e.target.value)} style={{flex:"1 1 220px"}}/>
           <button className="btn" disabled={!vWhen} onClick={()=>{
-            update(o=>({...o, visits:[...(o.visits||[]), {id:uid(), when:vWhen, purpose:vPurpose, note:vNote.trim()}]}));
+            update(o=>({...o, visits:[...(o.visits||[]),
+              {id:uid(), when:vWhen, purpose:vPurpose, note:vNote.trim(), by: meName, byId: meId}]}));
             setVNote(""); setVWhen(nowLocal());
           }}>기록 추가</button>
         </div>
+        {limited && <p className="muted small" style={{marginTop:8, marginBottom:0}}>
+          여기에 남긴 심방 기록은 목회자와 함께 보게 됩니다.</p>}
         </React.Fragment>}
       </div>}
 
@@ -2331,7 +2338,7 @@ function Calendar({members, events, saveEvents, canEdit, openMember}){
 }
 
 /* ───────── 심방 전체 ───────── */
-function Visits({members, update, openMember, canEdit}){
+function Visits({members, update, openMember, canEdit, meName, meId}){
   const [memId, setMemId] = useState("");
   const [when, setWhen] = useState(nowLocal());
   const [purpose, setPurpose] = useState("정기심방");
@@ -2359,7 +2366,8 @@ function Visits({members, update, openMember, canEdit}){
           <div className="row" style={{marginTop:8}}>
             <input placeholder="내용 (선택)" value={note} onChange={e=>setNote(e.target.value)} style={{flex:"1 1 220px"}}/>
             <button className="btn" disabled={!memId || !when} onClick={()=>{
-              update(memId, o=>({...o, visits:[...(o.visits||[]), {id:uid(), when, purpose, note:note.trim()}]}));
+              update(memId, o=>({...o, visits:[...(o.visits||[]),
+                {id:uid(), when, purpose, note:note.trim(), by: meName, byId: meId}]}));
               setNote(""); setWhen(nowLocal());
             }}>기록 추가</button>
           </div>
@@ -2373,7 +2381,8 @@ function Visits({members, update, openMember, canEdit}){
             <thead><tr><th>일시</th><th>교인</th><th>목적</th><th>내용</th><th></th></tr></thead>
             <tbody>{all.map(v=>(
               <tr key={v.id}>
-                <td style={{whiteSpace:"nowrap"}}>{fmtDT(v.when)}</td>
+                <td style={{whiteSpace:"nowrap"}}>{fmtDT(v.when)}
+                  {v.by && <div className="muted small">{v.by}</div>}</td>
                 <td><button className="btn sm ghost" onClick={()=>openMember(v.memId)}>{v.memName}</button></td>
                 <td><span className="chip pos">{v.purpose}</span></td>
                 <td style={{whiteSpace:"pre-wrap"}}>{v.note}</td>
