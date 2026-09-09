@@ -320,13 +320,14 @@ const fmtDT = v => {
 const koSort = (a, b) => (a.name || "").localeCompare(b.name || "", "ko");
 const errMsg = e => (e && e.message) ? e.message : "알 수 없는 오류";
 
-const SERVICES = [
+/* ═══ 교회마다 다를 수 있는 값들 — 설정 화면에서 바꿉니다 ═══ */
+let SERVICES = [
   {key:"sun", label:"주일예배", dow:0},
   {key:"wed", label:"수요예배", dow:3},
   {key:"fri", label:"금요기도회", dow:5},
   {key:"cls", label:"속회", dow:null},
 ];
-const POSITIONS = ["담임목사","부목사","전도사","사모","원로 장로","장로","원로 권사","권사","원로 집사","안수집사","집사","성도","청년","학생","새가족","소천"];
+let POSITIONS = ["담임목사","부목사","전도사","사모","원로 장로","장로","원로 권사","권사","원로 집사","안수집사","집사","성도","청년","학생","새가족","소천"];
 /* 소천하신 분 — 출석 명단에서 제외 (명부에는 그대로 남음) */
 const isDeceased = m => (m && m.position) === "소천" || /소천/.test((m && m.memo) || "");
 const PURPOSES = ["정기심방","새가족심방","환우심방","경조사","상담","전도","기도","기타"];
@@ -371,6 +372,14 @@ const headStyle = key => {
   }
   const s = SOK_STYLE[k];
   if(s) return {background:s.bg, ico: k[0]==="남" ? "♦" : "❀"};
+  if(k[0]==="남" || k[0]==="여"){
+    const n = Number(k.slice(1)) || 1;
+    const base = k[0]==="남" ? [34,53,92] : [168,68,47];
+    const step = k[0]==="남" ? 14 : 10;
+    const c1 = base.map(v=>Math.min(255, v + step*(n-1)));
+    const c2 = c1.map(v=>Math.max(0, v - 30));
+    return {background:`linear-gradient(135deg,rgb(${c1}),rgb(${c2}))`, ico: k[0]==="남" ? "♦" : "❀"};
+  }
   return {background:"linear-gradient(135deg,#7A869C,#59637A)", ico:"•"};
 };
 /* 부서·속 머리표 */
@@ -387,7 +396,7 @@ function DeptHead({sKey, name, count, right}){
 }
 
 /* 교회학교 부서 (현재 나이 기준). 이 나이대는 속별 명부에서 제외됨 */
-const SCHOOL_DEPTS = [
+let SCHOOL_DEPTS = [
   {key:"kinder", label:"유치부 (5~7세)", min:5, max:7},
   {key:"child", label:"아동부 (8~13세)", min:8, max:13},
   {key:"youth", label:"중고등부 (14~19세)", min:14, max:19},
@@ -396,14 +405,41 @@ const SCHOOL_DEPTS = [
 /* 교회학교 최고 나이 이하는 속 편성에서 제외 (현재 29세 이하) */
 const schoolMaxAge = () => Math.max(...SCHOOL_DEPTS.map(s=>s.max));
 
-const MINISTERS = ["담임목사","부목사","전도사"];   /* 교역자 — 속·부서와 별도로 묶음 */
+let MINISTERS = ["담임목사","부목사","전도사"];   /* 교역자 — 속·부서와 별도로 묶음 */
 const isMinister = m => MINISTERS.includes(m && m.position);
 const isSamo = m => (m && m.position) === "사모";   /* 사모 — 속회와 별도 항목 */
 /* 청년(직분이 '청년'이거나 메모에 청년부)은 나이와 상관없이 청년부 */
 const isYoungAdult = m => (m && m.position) === "청년" || /청년부/.test((m && m.memo) || "");
 
-const SOK_F = [[1948,1],[1954,2],[1958,3],[1962,4],[1968,5],[1973,6],[9999,7]];
-const SOK_M = [[1954,1],[1967,2],[9999,3]];   /* 1남 ~1954 · 2남 1955~1967 · 3남 1968~ */
+let SOK_F = [[1948,1],[1954,2],[1958,3],[1962,4],[1968,5],[1973,6],[9999,7]];
+let SOK_M = [[1954,1],[1967,2],[9999,3]];   /* 1남 ~1954 · 2남 1955~1967 · 3남 1968~ */
+
+/* 지금 설정을 그대로 꺼내기 (설정 화면에서 사용) */
+const currentChurchConfig = () => ({
+  services: SERVICES.map(s=>({...s})),
+  positions: [...POSITIONS],
+  ministers: [...MINISTERS],
+  depts: SCHOOL_DEPTS.map(d=>({...d})),
+  sokF: SOK_F.map(x=>[...x]),
+  sokM: SOK_M.map(x=>[...x]),
+});
+/* 설정을 프로그램에 적용 */
+const applyChurchConfig = (c) => {
+  if(!c) return;
+  if(Array.isArray(c.services) && c.services.length) SERVICES = c.services;
+  if(Array.isArray(c.positions) && c.positions.length) POSITIONS = c.positions;
+  if(Array.isArray(c.ministers)) MINISTERS = c.ministers;
+  if(Array.isArray(c.depts) && c.depts.length) SCHOOL_DEPTS = c.depts;
+  if(Array.isArray(c.sokF) && c.sokF.length) SOK_F = c.sokF;
+  if(Array.isArray(c.sokM) && c.sokM.length) SOK_M = c.sokM;
+};
+/* 속 개수에 맞춰 이름표 만들기 */
+const sokCount = g => (g==="여" ? SOK_F : SOK_M).length;
+/* 설정된 속 개수에 맞춘 키 목록: 남1..남n, 여1..여m */
+const sokKeys = () => [
+  ...SOK_M.map((_,i)=>"남"+(i+1)),
+  ...SOK_F.map((_,i)=>"여"+(i+1)),
+];
 function sokOf(m){
   if(isMinister(m) || isSamo(m) || isYoungAdult(m)) return null;   /* 교역자·사모·청년은 속 편성 제외 */
   const memo = m.memo || "";
@@ -442,7 +478,7 @@ const SCOPE_LIST = () => [
   ["MIN", "교역자"],
   ["SAMO", "사모"],
   ["SOK_ALL", "속 전체 (남·여 모든 속)"],
-  ...["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7"]
+  ...sokKeys()
       .map(k=>[k, sokLabel({g:k[0], n:Number(k[1])})]),
   ["S_ALL", "교회학교 전체 (유치부~청년부)"],
   ...SCHOOL_DEPTS.map(s=>["S_"+s.key, "교회학교 · "+s.label]),
@@ -709,6 +745,7 @@ function App({sb, profile, logout}){
   const [schoolClasses, setSchoolClasses] = useState({});
   const [events, setEvents] = useState([]);   /* 교회 행사 [{id,date,endDate,title,place,note,kind}] */
   const [specials, setSpecials] = useState([]);  /* 특별예배 [{key,label,from,to}] */
+  const [cfgVer, setCfgVer] = useState(0);       /* 설정이 바뀌면 화면 다시 그리기 */
   const isAdmin = profile.role === "admin";
   const myScopes = scopesOf(leaders, profile.id);
   const isLeader = !isAdmin && myScopes.length > 0;             /* 속장 · 교회학교 교사 */
@@ -770,6 +807,8 @@ function App({sb, profile, logout}){
     if(!s.error){
       const cn = (s.data||[]).find(r=>r.key==="churchName");
       if(cn && cn.value) setChurchName(cn.value);
+      const cc = (s.data||[]).find(r=>r.key==="churchConfig");
+      if(cc && cc.value){ try{ applyChurchConfig(JSON.parse(cc.value)); setCfgVer(v=>v+1); }catch(_){} }
       const sp = (s.data||[]).find(r=>r.key==="specialServices");
       if(sp && sp.value){ try{ setSpecials(JSON.parse(sp.value)||[]); }catch(_){ setSpecials([]); } }
       else setSpecials([]);
@@ -895,6 +934,12 @@ function App({sb, profile, logout}){
     alert(mode === "merge" ? "명단을 합쳐 넣었습니다." : "가져오기(전체 교체)가 완료되었습니다.");
   };
 
+  const saveConfig = async (next) => {
+    applyChurchConfig(next); setCfgVer(v=>v+1);
+    const {error} = await sb.from("church_settings").upsert({key:"churchConfig", value:JSON.stringify(next)});
+    if(error){ fail(error); loadAll(); }
+  };
+
   const saveSpecials = async (next) => {
     setSpecials(next);
     const {error} = await sb.from("church_settings").upsert({key:"specialServices", value:JSON.stringify(next)});
@@ -968,7 +1013,7 @@ function App({sb, profile, logout}){
                  : listScopes.some(k=>k.indexOf("S_")===0) ? "담당 교인" : "우리 속 교인"],
        ["att","출석 체크"],["cal","달력"]]
     : [["home","대문"],["members","교인"],["att","출석"],["cal","달력"],["visit","심방"],["pray","중보기도"]];
-  if(isAdmin) navItems.push(["team","사용자"]);
+  if(isAdmin){ navItems.push(["team","사용자"]); navItems.push(["cfg","설정"]); }
 
   if(!entered) return <Gate churchName={churchName} onEnter={()=>setEntered(true)}/>;
 
@@ -1076,6 +1121,7 @@ function App({sb, profile, logout}){
           : <Prayers members={members} update={updateMember} openMember={openMember} canEdit={canEdit}
               meName={profile.name || profile.email} meId={profile.id}/>)}
         {view==="team" && isAdmin && <Team sb={sb} me={profile} leaders={leaders} saveLeaders={saveLeaders}/>}
+        {view==="cfg" && isAdmin && <ChurchConfig key={cfgVer} saveConfig={saveConfig}/>}
         </React.Fragment>}
       </div>
     </div>
@@ -1405,7 +1451,7 @@ function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses, c
       if(!map[key]) map[key] = {s:s, items:[]};
       map[key].items.push(m);
     });
-    const order = ["MIN","SAMO","남1","남2","남3","여1","여2","여3","여4","여5","여6","여7","zz"];
+    const order = ["MIN","SAMO",...sokKeys(),"zz"];
     return order.filter(k=>map[k]).map(k=>({
       key:k,
       label: k==="MIN" ? "교역자" : k==="SAMO" ? "사모" : k==="zz" ? "속 미지정" : sokLabel(map[k].s),
@@ -1879,7 +1925,7 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses, specials, sa
     };
     bucket("MIN", "교역자");
     bucket("SAMO", "사모");
-    ["남1","남2","남3","여1","여2","여3","여4","여5","여6","여7"].forEach(k=>
+    sokKeys().forEach(k=>
       bucket(k, sokLabel({g:k[0], n:Number(k[1])})));
     SCHOOL_DEPTS.forEach(s => {
       const dep = (schoolClasses||{})[s.key];
@@ -2159,6 +2205,138 @@ function LineChart({rows, year, label, today}){
           <text key={t.mo} x={x(t.i)} y={H-12} textAnchor="middle" fontSize="11" fill="#63708A">{Number(t.mo)}월</text>
         ))}
       </svg>
+    </div>
+  );
+}
+
+/* ───────── 교회 설정 (관리자 전용) ───────── */
+function ChurchConfig({saveConfig}){
+  const [c, setC] = useState(currentChurchConfig());
+  const [msg, setMsg] = useState("");
+  const upd = (k, v) => { setC({...c, [k]: v}); setMsg(""); };
+
+  /* 속 목록을 [번호, 시작연도, 끝연도] 형태로 다루기 쉽게 */
+  const toRows = (tbl) => tbl.map((row, i) => ({
+    n: row[1],
+    from: i === 0 ? "" : String(tbl[i-1][0] + 1),
+    to: row[0] === 9999 ? "" : String(row[0]),
+  }));
+  const fromRows = (rows) => rows.map((r, i) =>
+    [ i === rows.length-1 ? 9999 : (Number(r.to) || 9999), i+1 ]);
+
+  const [fRows, setFRows] = useState(toRows(c.sokF));
+  const [mRows, setMRows] = useState(toRows(c.sokM));
+
+  const SokTable = ({title, rows, setRows, gender}) => (
+    <div style={{marginBottom:18}}>
+      <h3 style={{marginBottom:4}}>{title}</h3>
+      <p className="small muted" style={{marginTop:0}}>
+        각 속의 <b>마지막 출생연도</b>를 적습니다. 맨 아래 속은 그 이후 전부입니다.</p>
+      {rows.map((r,i)=>(
+        <div className="row" key={i} style={{marginBottom:6, alignItems:"center"}}>
+          <span className="chip editor" style={{minWidth:64}}>{i+1}{gender}선교회</span>
+          {i===0 ? <span className="muted small">처음부터</span>
+                 : <span className="muted small">{Number(rows[i-1].to)+1}년생부터</span>}
+          {i===rows.length-1
+            ? <span className="muted small">이후 전부</span>
+            : <React.Fragment>
+                <input type="number" value={r.to} style={{width:100}}
+                  onChange={e=>{ const a=[...rows]; a[i]={...r, to:e.target.value}; setRows(a); setMsg(""); }}/>
+                <span className="muted small">년생까지</span>
+              </React.Fragment>}
+          <button className="btn sm ghost" style={{marginLeft:"auto"}}
+            disabled={rows.length<=1}
+            onClick={()=>{ setRows(rows.filter((_,x)=>x!==i)); setMsg(""); }}>빼기</button>
+        </div>))}
+      <button className="btn sm" onClick={()=>{
+        const a=[...rows]; const last=a[a.length-1];
+        a[a.length-1] = {...last, to: String((Number(a[a.length-2]?.to)||1960)+5)};
+        a.push({to:""}); setRows(a); setMsg("");
+      }}>+ 속 추가</button>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="panel">
+        <h2>교회 설정</h2>
+        <p className="small muted" style={{marginTop:0}}>
+          교회마다 다른 부분입니다. 여기서 바꾸면 명부·출석·교회학교에 모두 반영됩니다.
+          <b> 이미 등록된 교인 기록은 지워지지 않고</b>, 새 기준으로 다시 나뉘기만 합니다.</p>
+        {msg && <p style={{color:"var(--pine)",fontWeight:600}}>{msg}</p>}
+      </div>
+
+      <div className="panel">
+        <h2>예배 종류</h2>
+        <p className="small muted" style={{marginTop:0}}>출석 체크에 나오는 예배입니다. 요일을 정하면 그 예배를 열 때 가장 가까운 날짜가 자동으로 잡힙니다.</p>
+        {c.services.map((s,i)=>(
+          <div className="row" key={i} style={{marginBottom:6}}>
+            <input value={s.label} style={{flex:"1 1 160px"}}
+              onChange={e=>{ const a=[...c.services]; a[i]={...s, label:e.target.value}; upd("services",a); }}/>
+            <select value={s.dow===null?"":String(s.dow)}
+              onChange={e=>{ const a=[...c.services]; a[i]={...s, dow: e.target.value===""?null:Number(e.target.value)}; upd("services",a); }}>
+              <option value="">요일 없음</option>
+              {["일","월","화","수","목","금","토"].map((d,x)=><option key={x} value={x}>{d}요일</option>)}
+            </select>
+            <button className="btn sm ghost" disabled={c.services.length<=1}
+              onClick={()=>upd("services", c.services.filter((_,x)=>x!==i))}>빼기</button>
+          </div>))}
+        <button className="btn sm" onClick={()=>upd("services",[...c.services,
+          {key:"sv"+Date.now().toString(36), label:"새 예배", dow:null}])}>+ 예배 추가</button>
+      </div>
+
+      <div className="panel">
+        <h2>교회학교 부서</h2>
+        <p className="small muted" style={{marginTop:0}}>
+          우리가 쓰는 나이(세는 나이)입니다. 이 나이대는 속별 명부에서 빠집니다.</p>
+        {c.depts.map((d,i)=>(
+          <div className="row" key={i} style={{marginBottom:6, alignItems:"center"}}>
+            <input value={d.label} style={{flex:"1 1 150px"}}
+              onChange={e=>{ const a=[...c.depts]; a[i]={...d, label:e.target.value}; upd("depts",a); }}/>
+            <input type="number" value={d.min} style={{width:78}}
+              onChange={e=>{ const a=[...c.depts]; a[i]={...d, min:Number(e.target.value)}; upd("depts",a); }}/>
+            <span className="muted small">세 ~</span>
+            <input type="number" value={d.max} style={{width:78}}
+              onChange={e=>{ const a=[...c.depts]; a[i]={...d, max:Number(e.target.value)}; upd("depts",a); }}/>
+            <span className="muted small">세</span>
+            <button className="btn sm ghost" style={{marginLeft:"auto"}} disabled={c.depts.length<=1}
+              onClick={()=>upd("depts", c.depts.filter((_,x)=>x!==i))}>빼기</button>
+          </div>))}
+        <button className="btn sm" onClick={()=>upd("depts",[...c.depts,
+          {key:"dp"+Date.now().toString(36), label:"새 부서", min:30, max:39}])}>+ 부서 추가</button>
+      </div>
+
+      <div className="panel">
+        <h2>선교회(속회) 편성</h2>
+        <SokTable title="여선교회" rows={fRows} setRows={setFRows} gender="여"/>
+        <SokTable title="남선교회" rows={mRows} setRows={setMRows} gender="남"/>
+        <p className="small muted" style={{marginBottom:0}}>
+          교인 메모에 &lsquo;3 여선교회&rsquo;처럼 적혀 있으면 나이보다 그 기록이 우선합니다.</p>
+      </div>
+
+      <div className="panel">
+        <h2>직분</h2>
+        <p className="small muted" style={{marginTop:0}}>교인 등록·수정에서 고를 수 있는 직분입니다. 쉼표로 구분해 적으세요.</p>
+        <textarea rows="3" value={c.positions.join(", ")}
+          onChange={e=>upd("positions", e.target.value.split(",").map(s=>s.trim()).filter(Boolean))}/>
+        <h3>이 중 교역자로 묶을 직분</h3>
+        <p className="small muted" style={{marginTop:0}}>여기 적힌 직분은 속회·교회학교에서 빠지고 &lsquo;교역자&rsquo;로 따로 모입니다.</p>
+        <textarea rows="2" value={c.ministers.join(", ")}
+          onChange={e=>upd("ministers", e.target.value.split(",").map(s=>s.trim()).filter(Boolean))}/>
+      </div>
+
+      <div className="panel">
+        <div className="row">
+          <button className="btn" onClick={()=>{
+            const next = {...c, sokF: fromRows(fRows), sokM: fromRows(mRows)};
+            saveConfig(next); setMsg("저장했습니다. 명부와 출석에 바로 반영됩니다.");
+          }}>설정 저장</button>
+          <button className="btn ghost" onClick={()=>{
+            const cur = currentChurchConfig();
+            setC(cur); setFRows(toRows(cur.sokF)); setMRows(toRows(cur.sokM)); setMsg("");
+          }}>되돌리기</button>
+        </div>
+      </div>
     </div>
   );
 }
