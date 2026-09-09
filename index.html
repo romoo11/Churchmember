@@ -691,21 +691,27 @@ function App({sb, profile, logout}){
   const isAdmin = profile.role === "admin";
   const myScopes = scopesOf(leaders, profile.id);
   const isLeader = !isAdmin && myScopes.length > 0;             /* 속장 · 교회학교 교사 */
+  /* 명단에서 볼 수 있는 범위 — '예배 출석 체크만'은 명단 권한이 아니므로 뺀다 */
+  const listScopes = myScopes.filter(k => k !== ATT_ONLY);
   const canEdit = !isLeader && (profile.role === "admin" || profile.role === "editor");
   const canCheckAtt = canEdit || isLeader;                      /* 출석 체크 가능 */
   /* 교회학교 담당 교사인지 (부서 하나 이상 맡은 경우) */
-  const isSchoolTeacher = isLeader && myScopes.some(k => k === "S_ALL" || k.indexOf("S_") === 0);
+  const isSchoolTeacher = isLeader && listScopes.some(k => k === "S_ALL" || k.indexOf("S_") === 0);
   /* 출석 체크만 맡은 분 — 다른 담당이 함께 있으면 명부도 볼 수 있음 */
-  const attOnly = isLeader && myScopes.length === 1 && myScopes[0] === ATT_ONLY;
+  const attOnly = isLeader && listScopes.length === 0;   /* 명단 권한 없이 출석만 맡은 분 */
   /* 이 사람의 정보를 고칠 수 있는가 — 교사는 자기 담당 학생만 */
   const canEditMember = (m) => {
     if(canEdit) return true;
     if(!m || !isSchoolTeacher) return false;
     if(!schoolDeptOf(m)) return false;                          /* 어른은 못 고침 */
-    return myScopes.some(k => inScope(m, k));                   /* 담당 부서 학생만 */
+    return listScopes.some(k => inScope(m, k));                 /* 담당 부서 학생만 */
   };
   /* 속장은 자기 속(또는 담당 부서) 사람만 보임 */
   const myMembers = isLeader
+    ? members.filter(m => listScopes.some(k => inScope(m, k)))
+    : members;
+  /* 출석 체크에서 볼 수 있는 범위 — 담당 전부 (출석 체크만 포함) */
+  const attMembers = isLeader
     ? members.filter(m => myScopes.some(k => inScope(m, k)))
     : members;
   /* 속장·교사가 담당 범위 밖이라도 볼 수 있는 사람: 담당 교인과 가족으로 이어진 분 (한 다리까지) */
@@ -937,8 +943,8 @@ function App({sb, profile, logout}){
     ? [["home","대문"],["att","예배 출석 체크"]]
     : isLeader
     ? [["home","대문"],
-       ["members", myScopes.every(k=>k.indexOf("S_")===0) ? "우리 부서"
-                 : myScopes.some(k=>k.indexOf("S_")===0) ? "담당 교인" : "우리 속 교인"],
+       ["members", listScopes.every(k=>k.indexOf("S_")===0) ? "우리 부서"
+                 : listScopes.some(k=>k.indexOf("S_")===0) ? "담당 교인" : "우리 속 교인"],
        ["att","출석 체크"],["cal","달력"]]
     : [["home","대문"],["members","교인"],["att","출석"],["cal","달력"],["visit","심방"],["pray","중보기도"]];
   if(isAdmin) navItems.push(["team","사용자"]);
@@ -991,7 +997,9 @@ function App({sb, profile, logout}){
           <b>{myScopes.map(scopeLabel).join(" · ")}</b> 담당으로 접속 중입니다.
           <span className="muted small">
             {attOnly
-              ? ` · 성도 ${myMembers.length}명의 예배 출석만 체크하실 수 있습니다. 교인 신상은 보이지 않습니다.`
+              ? ` · 성도 ${attMembers.length}명의 예배 출석만 체크하실 수 있습니다. 교인 신상은 보이지 않습니다.`
+              : myScopes.includes(ATT_ONLY)
+              ? ` · 예배 출석은 ${attMembers.length}명 전체를 체크하시고, 교인 명단은 담당 ${myMembers.length}명만 보입니다.`
               : ` · ${myMembers.length}명의 신상을 보고 출석을 체크하실 수 있습니다.`}
             {isSchoolTeacher && " 담당 부서 학생의 정보는 직접 수정하실 수 있습니다."}</span>
         </div>}
@@ -1003,7 +1011,7 @@ function App({sb, profile, logout}){
             setMemView={v=>{ pushHistory({view:"members", memView:{mode:"list"}}); setMemView(v); }} canEdit={canEdit}
             schoolClasses={schoolClasses} saveClasses={saveClasses}
             canEditClass={(deptKey)=> canEdit ||
-              (isSchoolTeacher && myScopes.some(k => k==="S_ALL" || k==="S_"+deptKey))}/> :
+              (isSchoolTeacher && listScopes.some(k => k==="S_ALL" || k==="S_"+deptKey))}/> :
           memView.mode==="form" && memView.id && !canEditMember(byId(memView.id))
             ? <div className="panel empty">이 교인의 정보는 수정할 수 없습니다.
                 <div style={{marginTop:10}}><button className="btn sm" onClick={()=>setMemView({mode:"detail", id:memView.id})}>돌아가기</button></div>
@@ -1032,7 +1040,7 @@ function App({sb, profile, logout}){
               }
             }}/>
         )}
-        {view==="att" && <Attendance members={myMembers} att={att} saveAtt={saveAtt} canEdit={canCheckAtt}
+        {view==="att" && <Attendance members={attMembers} att={att} saveAtt={saveAtt} canEdit={canCheckAtt}
           schoolClasses={schoolClasses} specials={specials} saveSpecials={saveSpecials} isAdmin={isAdmin || canEdit}/>}
         {view==="visit" && (isLeader
           ? <p className="empty">심방 기록은 목회자와 관리자만 볼 수 있습니다.</p>
