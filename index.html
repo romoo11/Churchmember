@@ -150,6 +150,9 @@
   .brand svg{flex:none}
   .brand button{background:none;border:none;color:inherit;font:inherit;padding:0;text-align:left}
   .brand button:hover{text-decoration:underline}
+  .logo-btn{background:transparent;border:0;padding:0;line-height:0;cursor:pointer;
+    border-radius:8px;-webkit-tap-highlight-color:transparent}
+  .logo-btn:hover{opacity:.8}
   .back-btn{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#EEF1F7;
     padding:7px 14px;border-radius:9px;font-size:14.5px;font-weight:600;white-space:nowrap;margin-right:2px}
   .back-btn:hover{background:rgba(255,255,255,.26)}
@@ -1077,13 +1080,13 @@ function App({sb, profile, logout}){
   };
 
   const navItems = attOnly
-    ? [["home","대문"],["att","예배 출석 체크"]]
+    ? [["home","홈"],["att","예배 출석 체크"]]
     : isLeader
-    ? [["home","대문"],
+    ? [["home","홈"],
        ["members", listScopes.every(k=>k.indexOf("S_")===0) ? "우리 부서"
                  : listScopes.some(k=>k.indexOf("S_")===0) ? "담당 교인" : "우리 속 교인"],
        ["att","출석 체크"],["cal","달력"]]
-    : [["home","대문"],["members","교인"],["att","출석"],["cal","달력"],["visit","심방"],["pray","중보기도"]];
+    : [["home","홈"],["members","교인"],["att","출석"],["cal","달력"],["visit","심방"],["pray","중보기도"]];
   if(isAdmin){ navItems.push(["team","사용자"]); navItems.push(["cfg","설정"]); }
 
   if(!entered) return <Gate churchName={churchName} onEnter={()=>setEntered(true)}/>;
@@ -1108,7 +1111,10 @@ function App({sb, profile, logout}){
       <header className="top">
         <div className="top-in">
           <div className="brand">
-            <Logo/>
+            <button className="logo-btn" onClick={()=>{ setEntered(false); window.scrollTo(0,0); }}
+              title="시작 화면으로">
+              <Logo/>
+            </button>
             <button onClick={isAdmin ? renameChurch : undefined} title={isAdmin?"교회 이름 바꾸기":""}>{churchName} 교인 관리</button>
           </div>
           {histLen>0 &&
