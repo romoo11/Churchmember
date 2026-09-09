@@ -39,6 +39,11 @@
   .cls-head.none{background:#EFEEE6;border-left-color:#B8B4A4}
   .cls-head.none .nm{color:#6C7A72}
   .chip.secret{background:#7E2F20;color:#fff}
+  td.nw, th.nw{white-space:nowrap}
+  .scope-col{min-width:230px}
+  .scope-row{display:flex;align-items:center;gap:5px;margin-bottom:5px}
+  .scope-row .chip{white-space:nowrap}
+  .scope-col select{max-width:230px}
   .svc-add{border:1.5px dashed var(--pine);background:#fff;border-radius:999px;padding:8px 16px;
     font-weight:600;color:var(--pine)}
   .svc-add:hover{background:var(--pine-soft)}
@@ -1117,17 +1122,17 @@ function Team({sb, me, leaders, saveLeaders}){
             <thead><tr><th>이름</th><th>이메일</th><th>권한</th><th>담당 속(속장)</th><th></th></tr></thead>
             <tbody>{active.map(r=>(
               <tr key={r.id}>
-                <td>{r.name || <span className="muted">이름 없음</span>}{r.id===me.id && " (나)"}</td>
-                <td>{r.email}</td>
-                <td><span className={"chip "+r.role}>{ROLE_LABEL[r.role]||r.role}</span>
+                <td className="nw">{r.name || <span className="muted">이름 없음</span>}{r.id===me.id && " (나)"}</td>
+                <td className="nw">{r.email}</td>
+                <td className="nw"><span className={"chip "+r.role}>{ROLE_LABEL[r.role]||r.role}</span>
                   {scopesOf(leaders, r.id).length>0 && r.role!=="admin" && <span className="chip editor" style={{marginLeft:4}}>속장·교사</span>}</td>
-                <td>
+                <td className="scope-col">
                   {r.role==="admin" ? <span className="muted small">관리자는 전체를 봅니다</span> :
                     <React.Fragment>
                       {scopesOf(leaders, r.id).map(k=>(
-                        <span key={k} className="chip editor" style={{marginRight:4, marginBottom:4, display:"inline-block"}}>
-                          {scopeLabel(k)}{" "}
-                          <button className="btn sm ghost" style={{padding:"0 6px", marginLeft:2}}
+                        <span key={k} className="scope-row">
+                          <span className="chip editor">{scopeLabel(k)}</span>
+                          <button className="btn sm ghost" style={{padding:"0 7px"}}
                             title="이 담당 빼기"
                             onClick={()=>{
                               const next = {...(leaders||{})};
@@ -2391,7 +2396,8 @@ function Visits({members, update, openMember, canEdit, meName, meId}){
               <tr key={v.id}>
                 <td style={{whiteSpace:"nowrap"}}>{fmtDT(v.when)}
                   {v.by && <div className="muted small">{v.by}</div>}</td>
-                <td><button className="btn sm ghost" onClick={()=>openMember(v.memId)}>{v.memName}</button></td>
+                <td className="nw"><button className="btn sm ghost" style={{whiteSpace:"nowrap"}}
+                  onClick={()=>openMember(v.memId)}>{v.memName}</button></td>
                 <td><span className="chip pos">{v.purpose}</span></td>
                 <td style={{whiteSpace:"pre-wrap"}}>{v.note}</td>
                 <td>{canEdit && <button className="btn sm danger" onClick={()=>{
@@ -2466,7 +2472,8 @@ function Prayers({members, update, openMember, canEdit, meName, meId}){
               <tr key={p.id}>
                 <td style={{whiteSpace:"nowrap"}}>{p.date}
                   {p.by && <div className="muted small">{p.by}</div>}</td>
-                <td><button className="btn sm ghost" onClick={()=>openMember(p.memId)}>{p.memName}</button></td>
+                <td className="nw"><button className="btn sm ghost" style={{whiteSpace:"nowrap"}}
+                  onClick={()=>openMember(p.memId)}>{p.memName}</button></td>
                 <td style={{whiteSpace:"pre-wrap"}}>
                   {p.secret && <span className="chip secret" style={{marginRight:6}}>긴밀</span>}
                   {p.request}</td>
