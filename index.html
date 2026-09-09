@@ -1125,7 +1125,6 @@ function App({sb, profile, logout}){
             ))}
           </nav>
           <div className="row" style={{gap:6}}>
-            <button className="backup-btn" onClick={loadAll} title="다른 사람이 입력한 내용 반영">새로고침</button>
             {canEdit && !isLeader && <button className="backup-btn" onClick={doExport}>백업</button>}
             {isAdmin && <button className="backup-btn" onClick={()=>fileRef.current.click()}>가져오기</button>}
             <button className="backup-btn" onClick={logout}>{profile.name || "나"} · 로그아웃</button>
