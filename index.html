@@ -411,11 +411,18 @@ const isSamo = m => (m && m.position) === "사모";   /* 사모 — 속회와 �
 /* 청년(직분이 '청년'이거나 메모에 청년부)은 나이와 상관없이 청년부 */
 const isYoungAdult = m => (m && m.position) === "청년" || /청년부/.test((m && m.memo) || "");
 
+/* 속 편성 방식: "age" = 나이·성별로 자동, "manual" = 속 이름을 만들고 사람마다 지정 */
+let SOK_MODE = "age";
+/* 직접 지정 방식일 때 쓰는 속 목록 [{id, name}] */
+let SOK_LIST = [];
+
 let SOK_F = [[1948,1],[1954,2],[1958,3],[1962,4],[1968,5],[1973,6],[9999,7]];
 let SOK_M = [[1954,1],[1967,2],[9999,3]];   /* 1남 ~1954 · 2남 1955~1967 · 3남 1968~ */
 
 /* 지금 설정을 그대로 꺼내기 (설정 화면에서 사용) */
 const currentChurchConfig = () => ({
+  sokMode: SOK_MODE,
+  sokList: SOK_LIST.map(s=>({...s})),
   services: SERVICES.map(s=>({...s})),
   positions: [...POSITIONS],
   ministers: [...MINISTERS],
@@ -426,6 +433,8 @@ const currentChurchConfig = () => ({
 /* 설정을 프로그램에 적용 */
 const applyChurchConfig = (c) => {
   if(!c) return;
+  if(c.sokMode === "age" || c.sokMode === "manual") SOK_MODE = c.sokMode;
+  if(Array.isArray(c.sokList)) SOK_LIST = c.sokList;
   if(Array.isArray(c.services) && c.services.length) SERVICES = c.services;
   if(Array.isArray(c.positions) && c.positions.length) POSITIONS = c.positions;
   if(Array.isArray(c.ministers)) MINISTERS = c.ministers;
@@ -436,12 +445,23 @@ const applyChurchConfig = (c) => {
 /* 속 개수에 맞춰 이름표 만들기 */
 const sokCount = g => (g==="여" ? SOK_F : SOK_M).length;
 /* 설정된 속 개수에 맞춘 키 목록: 남1..남n, 여1..여m */
-const sokKeys = () => [
-  ...SOK_M.map((_,i)=>"남"+(i+1)),
-  ...SOK_F.map((_,i)=>"여"+(i+1)),
-];
+const sokKeys = () => SOK_MODE === "manual"
+  ? SOK_LIST.map(s=>s.id)
+  : [ ...SOK_M.map((_,i)=>"남"+(i+1)), ...SOK_F.map((_,i)=>"여"+(i+1)) ];
+/* 키 하나의 이름표 */
+const sokKeyLabel = k => SOK_MODE === "manual"
+  ? ((SOK_LIST.find(s=>s.id===k)||{}).name || "속 미지정")
+  : sokLabel({g:k[0], n:Number(k.slice(1))});
 function sokOf(m){
   if(isMinister(m) || isSamo(m) || isYoungAdult(m)) return null;   /* 교역자·사모·청년은 속 편성 제외 */
+
+  if(SOK_MODE === "manual"){
+    /* 직접 지정: 교인 기록의 sok 값으로 */
+    const id = m && m.sok;
+    if(id && SOK_LIST.some(s=>s.id===id)) return {id};
+    return null;
+  }
+
   const memo = m.memo || "";
   let t = memo.match(/([0-9])\s*여선교회/); if(t) return {g:"여", n:Number(t[1])};
   t = memo.match(/([0-9])\s*남선교회/); if(t) return {g:"남", n:Number(t[1])};
@@ -454,14 +474,18 @@ function sokOf(m){
   }
   return null;
 }
-const sokLabel = s => `${s.g}자 ${s.n}속 (${s.n}${s.g}선교회)`;
+const sokLabel = s => {
+  if(!s) return "속 미지정";
+  if(s.id){ const f = SOK_LIST.find(x=>x.id===s.id); return f ? f.name : "속 미지정"; }
+  return `${s.g}자 ${s.n}속 (${s.n}${s.g}선교회)`;
+};
 /* 현재 나이로 교회학교 부서 찾기 */
 /* 한 사람이 속한 편성 구분: 남1~3, 여1~7, 교회학교 부서, 그 외 */
 const scopeKeyOf = m => {
   if(isMinister(m)) return "MIN";
   if(isSamo(m)) return "SAMO";
   const s = sokOf(m);
-  if(s) return s.g + s.n;
+  if(s) return s.id ? s.id : s.g + s.n;
   const d = schoolDeptOf(m);
   if(d) return "S_" + d.key;
   return "zz";
@@ -479,7 +503,7 @@ const SCOPE_LIST = () => [
   ["SAMO", "사모"],
   ["SOK_ALL", "속 전체 (남·여 모든 속)"],
   ...sokKeys()
-      .map(k=>[k, sokLabel({g:k[0], n:Number(k[1])})]),
+      .map(k=>[k, sokKeyLabel(k)]),
   ["S_ALL", "교회학교 전체 (유치부~청년부)"],
   ...SCHOOL_DEPTS.map(s=>["S_"+s.key, "교회학교 · "+s.label]),
 ];
@@ -511,7 +535,7 @@ const ROLE_LABEL = {admin:"관리자", editor:"수정 가능", viewer:"열람만
 
 const emptyMember = () => ({
   id: uid(), name:"", birth:"", phone:"", address:"", position:"성도", gender:"", memo:"", photo:"",
-  family:[], depts:[], visits:[], prayers:[]
+  sok:"", family:[], depts:[], visits:[], prayers:[]
 });
 
 /* ───────── 대문 그림 (교회와 사람들, 스테인드글라스) ───────── */
@@ -1447,11 +1471,11 @@ function MemberList({members, setMemView, canEdit, schoolClasses, saveClasses, c
       const s = sokOf(m);
       /* 교회학교(유치부~청년부) 대상은 속별 명부에 나오지 않음 */
       if(!s && schoolDeptOf(m)) return;
-      const key = s ? s.g + s.n : "zz";
+      const key = s ? (s.id ? s.id : s.g + s.n) : "zz";
       if(!map[key]) map[key] = {s:s, items:[]};
       map[key].items.push(m);
     });
-    const order = ["MIN","SAMO",...sokKeys(),"zz"];
+    const order = ["MIN","SAMO",...sokKeys(),"zz"];   /* 설정된 속 순서대로 */
     return order.filter(k=>map[k]).map(k=>({
       key:k,
       label: k==="MIN" ? "교역자" : k==="SAMO" ? "사모" : k==="zz" ? "속 미지정" : sokLabel(map[k].s),
@@ -1593,6 +1617,12 @@ function MemberForm({init, onSave, onCancel}){
         <div className="field"><label>직분</label>
           <input list="pos-list" value={m.position} onChange={e=>set("position",e.target.value)}/>
           <datalist id="pos-list">{POSITIONS.map(p=><option key={p} value={p}/>)}</datalist></div>
+        {SOK_MODE==="manual" &&
+          <div className="field"><label>속회</label>
+            <select value={m.sok||""} onChange={e=>set("sok",e.target.value)}>
+              <option value="">속 미지정</option>
+              {SOK_LIST.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+            </select></div>}
       </div>
       <div className="field"><label>주소</label>
         <input value={m.address} onChange={e=>set("address",e.target.value)} placeholder="시/구/동 상세주소"/></div>
@@ -1701,7 +1731,10 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
         <div className="tbl-wrap" style={{marginTop:12}}><table>
           <tbody>
             <tr><th style={{width:90}}>생년월일</th><td>{m.birth ? `${m.birth} (${age}세)` : <span className="muted">미입력</span>}</td></tr>
-            <tr><th>속회</th><td>{sokOf(m) ? sokLabel(sokOf(m)) : <span className="muted">미지정 — 성별과 생년월일을 입력하면 자동 배정됩니다</span>}{m.gender && <span className="muted small"> · 성별: {m.gender}</span>}</td></tr>
+            <tr><th>속회</th><td>{sokOf(m) ? sokLabel(sokOf(m)) :
+              <span className="muted">{SOK_MODE==="manual"
+                ? "미지정 — '정보 수정'에서 속회를 골라 주세요"
+                : "미지정 — 성별과 생년월일을 입력하면 자동 배정됩니다"}</span>}{m.gender && <span className="muted small"> · 성별: {m.gender}</span>}</td></tr>
             <tr><th>연락처</th><td>{m.phone ? <a href={"tel:"+m.phone.replace(/[^0-9+]/g,"")}>{m.phone}</a> : <span className="muted">미입력</span>}</td></tr>
             <tr><th>주소</th><td>{m.address || <span className="muted">미입력</span>}</td></tr>
             {m.memo && <tr><th>메모</th><td style={{whiteSpace:"pre-wrap"}}>{m.memo}</td></tr>}
@@ -1926,7 +1959,7 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses, specials, sa
     bucket("MIN", "교역자");
     bucket("SAMO", "사모");
     sokKeys().forEach(k=>
-      bucket(k, sokLabel({g:k[0], n:Number(k[1])})));
+      bucket(k, sokKeyLabel(k)));
     SCHOOL_DEPTS.forEach(s => {
       const dep = (schoolClasses||{})[s.key];
       const cls = dep && dep.classes ? dep.classes
@@ -1944,7 +1977,7 @@ function Attendance({members, att, saveAtt, canEdit, schoolClasses, specials, sa
       if(isMinister(m)){ map["MIN"].items.push(m); return; }
       if(isSamo(m)){ map["SAMO"].items.push(m); return; }
       const s = sokOf(m);
-      if(s){ bucket(s.g+s.n, sokLabel(s)).items.push(m); return; }
+      if(s){ const kk = s.id ? s.id : s.g+s.n; bucket(kk, sokLabel(s)).items.push(m); return; }
       const d = schoolDeptOf(m);
       if(d){
         const dep = (schoolClasses||{})[d.key];
@@ -2307,11 +2340,40 @@ function ChurchConfig({saveConfig}){
       </div>
 
       <div className="panel">
-        <h2>선교회(속회) 편성</h2>
-        <SokTable title="여선교회" rows={fRows} setRows={setFRows} gender="여"/>
-        <SokTable title="남선교회" rows={mRows} setRows={setMRows} gender="남"/>
-        <p className="small muted" style={{marginBottom:0}}>
-          교인 메모에 &lsquo;3 여선교회&rsquo;처럼 적혀 있으면 나이보다 그 기록이 우선합니다.</p>
+        <h2>속회(선교회) 편성</h2>
+        <div className="row" style={{gap:16, marginBottom:14}}>
+          <label className="row" style={{gap:6, alignItems:"center"}}>
+            <input type="radio" checked={c.sokMode!=="manual"}
+              onChange={()=>upd("sokMode","age")}/>
+            <b>나이로 자동</b> <span className="muted small">— 성별과 출생연도로 나눔</span>
+          </label>
+          <label className="row" style={{gap:6, alignItems:"center"}}>
+            <input type="radio" checked={c.sokMode==="manual"}
+              onChange={()=>upd("sokMode","manual")}/>
+            <b>직접 지정</b> <span className="muted small">— 지역·구역 등 이름을 정하고 사람마다 고름</span>
+          </label>
+        </div>
+
+        {c.sokMode==="manual" ? <React.Fragment>
+          <p className="small muted" style={{marginTop:0}}>
+            속 이름을 자유롭게 만드세요(예: 강서속, 화곡1구역, 등촌속). 교인 등록·수정 화면에서 각 사람의 속을 고르게 됩니다.</p>
+          {(c.sokList||[]).map((s,i)=>(
+            <div className="row" key={s.id} style={{marginBottom:6}}>
+              <input value={s.name} style={{flex:"1 1 200px"}} placeholder="속 이름"
+                onChange={e=>{ const a=[...c.sokList]; a[i]={...s, name:e.target.value}; upd("sokList",a); }}/>
+              <button className="btn sm ghost"
+                onClick={()=>upd("sokList", c.sokList.filter((_,x)=>x!==i))}>빼기</button>
+            </div>))}
+          <button className="btn sm" onClick={()=>upd("sokList",[...(c.sokList||[]),
+            {id:"sk"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:"새 속"}])}>+ 속 추가</button>
+          <p className="small muted" style={{marginTop:10, marginBottom:0}}>
+            속을 지우면 그 속에 있던 교인은 <b>속 미지정</b>으로 돌아갑니다. 교인 기록 자체는 그대로입니다.</p>
+        </React.Fragment> : <React.Fragment>
+          <SokTable title="여선교회" rows={fRows} setRows={setFRows} gender="여"/>
+          <SokTable title="남선교회" rows={mRows} setRows={setMRows} gender="남"/>
+          <p className="small muted" style={{marginBottom:0}}>
+            교인 메모에 &lsquo;3 여선교회&rsquo;처럼 적혀 있으면 나이보다 그 기록이 우선합니다.</p>
+        </React.Fragment>}
       </div>
 
       <div className="panel">
