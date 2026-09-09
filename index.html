@@ -411,9 +411,12 @@ const isSamo = m => (m && m.position) === "사모";   /* 사모 — 속회와 �
 /* 청년(직분이 '청년'이거나 메모에 청년부)은 나이와 상관없이 청년부 */
 const isYoungAdult = m => (m && m.position) === "청년" || /청년부/.test((m && m.memo) || "");
 
-/* 속 편성 방식: "age" = 나이·성별로 자동, "manual" = 속 이름을 만들고 사람마다 지정 */
+/* 속 편성 방식
+   "age"    = 나이·성별로 자동
+   "manual" = 속 이름을 만들고 사람마다 지정
+   "area"   = 주소에 든 지역 이름으로 자동 (사람마다 직접 지정도 가능) */
 let SOK_MODE = "age";
-/* 직접 지정 방식일 때 쓰는 속 목록 [{id, name}] */
+/* 직접 지정·주소 방식일 때 쓰는 속 목록 [{id, name, areas:["화곡1동","화곡2동"]}] */
 let SOK_LIST = [];
 
 let SOK_F = [[1948,1],[1954,2],[1958,3],[1962,4],[1968,5],[1973,6],[9999,7]];
@@ -455,10 +458,22 @@ const sokKeyLabel = k => SOK_MODE === "manual"
 function sokOf(m){
   if(isMinister(m) || isSamo(m) || isYoungAdult(m)) return null;   /* 교역자·사모·청년은 속 편성 제외 */
 
-  if(SOK_MODE === "manual"){
-    /* 직접 지정: 교인 기록의 sok 값으로 */
+  if(SOK_MODE === "manual" || SOK_MODE === "area"){
+    /* 사람에게 직접 지정한 속이 있으면 그것이 우선 */
     const id = m && m.sok;
     if(id && SOK_LIST.some(s=>s.id===id)) return {id};
+    /* 주소 방식이면 주소에 든 지역 이름으로 찾음 */
+    if(SOK_MODE === "area"){
+      const addr = normArea(m && m.address);
+      if(addr){
+        for(const s of SOK_LIST){
+          for(const a of (s.areas||[])){
+            const key = normArea(a);
+            if(key && addr.indexOf(key) >= 0) return {id:s.id};
+          }
+        }
+      }
+    }
     return null;
   }
 
@@ -474,6 +489,14 @@ function sokOf(m){
   }
   return null;
 }
+/* 주소 비교용으로 정리: 공백 제거, '화곡제1동' → '화곡1동' 같은 표기 차이 흡수 */
+const normArea = t => {
+  if(!t) return "";
+  return String(t)
+    .replace(/\s+/g, "")
+    .replace(/제([0-9]+)(동|가|구역)/g, "$1$2")
+    .toLowerCase();
+};
 const sokLabel = s => {
   if(!s) return "속 미지정";
   if(s.id){ const f = SOK_LIST.find(x=>x.id===s.id); return f ? f.name : "속 미지정"; }
@@ -1617,12 +1640,15 @@ function MemberForm({init, onSave, onCancel}){
         <div className="field"><label>직분</label>
           <input list="pos-list" value={m.position} onChange={e=>set("position",e.target.value)}/>
           <datalist id="pos-list">{POSITIONS.map(p=><option key={p} value={p}/>)}</datalist></div>
-        {SOK_MODE==="manual" &&
+        {(SOK_MODE==="manual" || SOK_MODE==="area") &&
           <div className="field"><label>속회</label>
             <select value={m.sok||""} onChange={e=>set("sok",e.target.value)}>
-              <option value="">속 미지정</option>
+              <option value="">{SOK_MODE==="area" ? "주소로 자동 배정" : "속 미지정"}</option>
               {SOK_LIST.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-            </select></div>}
+            </select>
+            {SOK_MODE==="area" &&
+              <span className="muted small">비워 두면 주소를 보고 자동으로 배정됩니다.</span>}
+          </div>}
       </div>
       <div className="field"><label>주소</label>
         <input value={m.address} onChange={e=>set("address",e.target.value)} placeholder="시/구/동 상세주소"/></div>
@@ -1734,6 +1760,8 @@ function MemberDetail({m, att, setMemView, update, remove, canEdit, canDelete, a
             <tr><th>속회</th><td>{sokOf(m) ? sokLabel(sokOf(m)) :
               <span className="muted">{SOK_MODE==="manual"
                 ? "미지정 — '정보 수정'에서 속회를 골라 주세요"
+                : SOK_MODE==="area"
+                ? "미지정 — 주소에 맞는 속이 없습니다. 주소를 확인하거나 '정보 수정'에서 속회를 골라 주세요"
                 : "미지정 — 성별과 생년월일을 입력하면 자동 배정됩니다"}</span>}{m.gender && <span className="muted small"> · 성별: {m.gender}</span>}</td></tr>
             <tr><th>연락처</th><td>{m.phone ? <a href={"tel:"+m.phone.replace(/[^0-9+]/g,"")}>{m.phone}</a> : <span className="muted">미입력</span>}</td></tr>
             <tr><th>주소</th><td>{m.address || <span className="muted">미입력</span>}</td></tr>
@@ -2341,32 +2369,46 @@ function ChurchConfig({saveConfig}){
 
       <div className="panel">
         <h2>속회(선교회) 편성</h2>
-        <div className="row" style={{gap:16, marginBottom:14}}>
-          <label className="row" style={{gap:6, alignItems:"center"}}>
-            <input type="radio" checked={c.sokMode!=="manual"}
-              onChange={()=>upd("sokMode","age")}/>
-            <b>나이로 자동</b> <span className="muted small">— 성별과 출생연도로 나눔</span>
-          </label>
-          <label className="row" style={{gap:6, alignItems:"center"}}>
-            <input type="radio" checked={c.sokMode==="manual"}
-              onChange={()=>upd("sokMode","manual")}/>
-            <b>직접 지정</b> <span className="muted small">— 지역·구역 등 이름을 정하고 사람마다 고름</span>
-          </label>
+        <div style={{marginBottom:14}}>
+          {[["age","나이로 자동","성별과 출생연도로 나눔"],
+            ["area","주소로 자동","주소에 든 동·구역 이름으로 나눔"],
+            ["manual","직접 지정","사람마다 속을 골라 넣음"]].map(([v,t,d])=>(
+            <label key={v} className="row" style={{gap:6, alignItems:"center", marginBottom:5}}>
+              <input type="radio" checked={(c.sokMode||"age")===v} onChange={()=>upd("sokMode",v)}/>
+              <b>{t}</b> <span className="muted small">— {d}</span>
+            </label>))}
         </div>
 
-        {c.sokMode==="manual" ? <React.Fragment>
+        {(c.sokMode==="manual" || c.sokMode==="area") ? <React.Fragment>
           <p className="small muted" style={{marginTop:0}}>
-            속 이름을 자유롭게 만드세요(예: 강서속, 화곡1구역, 등촌속). 교인 등록·수정 화면에서 각 사람의 속을 고르게 됩니다.</p>
+            {c.sokMode==="area"
+              ? <React.Fragment>속 이름과 그 속이 맡는 <b>지역</b>을 적으세요. 교인 주소에 그 지역 이름이 들어 있으면 자동으로 그 속에 들어갑니다.
+                  지역은 쉼표로 여러 개 적을 수 있습니다(예: 화곡1동, 화곡2동).</React.Fragment>
+              : "속 이름을 자유롭게 만드세요(예: 강서속, 화곡1구역, 등촌속). 교인 등록·수정 화면에서 각 사람의 속을 고르게 됩니다."}</p>
           {(c.sokList||[]).map((s,i)=>(
-            <div className="row" key={s.id} style={{marginBottom:6}}>
-              <input value={s.name} style={{flex:"1 1 200px"}} placeholder="속 이름"
-                onChange={e=>{ const a=[...c.sokList]; a[i]={...s, name:e.target.value}; upd("sokList",a); }}/>
-              <button className="btn sm ghost"
-                onClick={()=>upd("sokList", c.sokList.filter((_,x)=>x!==i))}>빼기</button>
+            <div key={s.id} style={{marginBottom:8, paddingBottom:8,
+              borderBottom: c.sokMode==="area" ? "1px solid var(--line)" : "none"}}>
+              <div className="row">
+                <input value={s.name} style={{flex:"1 1 180px"}} placeholder="속 이름"
+                  onChange={e=>{ const a=[...c.sokList]; a[i]={...s, name:e.target.value}; upd("sokList",a); }}/>
+                <button className="btn sm ghost"
+                  onClick={()=>upd("sokList", c.sokList.filter((_,x)=>x!==i))}>빼기</button>
+              </div>
+              {c.sokMode==="area" &&
+                <div className="row" style={{marginTop:5}}>
+                  <span className="muted small" style={{minWidth:38}}>지역</span>
+                  <input value={(s.areas||[]).join(", ")} style={{flex:"1 1 260px"}}
+                    placeholder="화곡1동, 화곡2동"
+                    onChange={e=>{ const a=[...c.sokList];
+                      a[i]={...s, areas:e.target.value.split(",").map(x=>x.trim()).filter(Boolean)};
+                      upd("sokList",a); }}/>
+                </div>}
             </div>))}
           <button className="btn sm" onClick={()=>upd("sokList",[...(c.sokList||[]),
-            {id:"sk"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:"새 속"}])}>+ 속 추가</button>
+            {id:"sk"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:"새 속", areas:[]}])}>+ 속 추가</button>
           <p className="small muted" style={{marginTop:10, marginBottom:0}}>
+            {c.sokMode==="area" && <React.Fragment>주소로 못 찾은 교인은 <b>속 미지정</b>에 모입니다.
+              그런 분은 교인 수정에서 속을 직접 골라 주시면 되고, <b>직접 고른 속이 주소보다 우선</b>합니다.<br/></React.Fragment>}
             속을 지우면 그 속에 있던 교인은 <b>속 미지정</b>으로 돌아갑니다. 교인 기록 자체는 그대로입니다.</p>
         </React.Fragment> : <React.Fragment>
           <SokTable title="여선교회" rows={fRows} setRows={setFRows} gender="여"/>
