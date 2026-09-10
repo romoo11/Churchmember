@@ -49,8 +49,10 @@
     font-size:13px;color:#1E2635;font-weight:600}
   .dept-head button:hover{background:#fff}
   /* 반 머리표 */
-  .cls-head{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:6px 12px;border-radius:10px;
-    background:var(--pine-soft);border-left:5px solid var(--pine)}
+  .cls-head{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:6px 13px;border-radius:11px;
+    border:1px solid #BFCADE;border-left:5px solid var(--pine);
+    background:linear-gradient(180deg,#F4F7FC 0%,#E6ECF6 55%,#D9E1EE 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 1px 3px rgba(34,53,92,.10)}
   .cls-head .nm{font-weight:700;font-size:15px;color:var(--pine-deep)}
   .cls-head .ct{color:var(--muted);font-size:12.5px}
   .cls-head .btn.sm{margin-left:auto}
@@ -103,9 +105,12 @@
   .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
   .cal-wd{text-align:center;font-size:12.5px;color:var(--muted);font-weight:600;padding:4px 0}
   .cal-wd.sun{color:#A8442F}.cal-wd.sat{color:#3D5A80}
-  .cal-cell{min-height:82px;background:#FBFCFE;border:1px solid #DFE4EE;border-radius:9px;
-    padding:4px 5px;cursor:pointer;overflow:hidden}
-  .cal-cell:hover{border-color:var(--pine)}
+  .cal-cell{min-height:82px;border:1px solid #C9D2E1;border-radius:11px;
+    padding:4px 5px;cursor:pointer;overflow:hidden;
+    background:linear-gradient(180deg,#FFFFFF 0%,#F3F6FB 55%,#E6EBF4 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 1px 3px rgba(34,53,92,.10);
+    transition:filter .12s}
+  .cal-cell:hover{filter:brightness(1.05)}
   .cal-cell.empty{background:transparent;border:0;cursor:default;min-height:0}
   .cal-cell.sel{border-color:var(--pine);box-shadow:0 0 0 2px rgba(34,53,92,.18)}
   .cal-cell.today{background:#EDF1F8}
@@ -179,17 +184,30 @@
   nav button{white-space:nowrap}
   .top-right{display:flex;gap:4px;align-items:center;white-space:nowrap}
   /* 화면이 좁아질수록 조금씩 더 줄여 한 줄을 지킨다 */
+  nav button{background:none;border:1px solid transparent;color:#CFDDD6;padding:7px 10px;
+    border-radius:11px;font-weight:500;font-size:14.5px;
+    transition:filter .12s, transform .08s, background .12s}
+  nav button:not(.on):hover{background:rgba(255,255,255,.12);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+  nav button:active{transform:translateY(1px)}
+  nav button.on{color:#33280B;font-weight:700;border:1px solid #8C6C1E;
+    text-shadow:0 1px 0 rgba(255,255,255,.42);
+    background:linear-gradient(180deg,#EBD9A4 0%,#D3B159 44%,#B8912F 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.5), inset 0 -2px 4px rgba(0,0,0,.18),
+      0 2px 4px rgba(0,0,0,.24)}
+  .backup-btn{color:#EEF1F7;padding:6px 11px;border-radius:11px;font-size:13px;white-space:nowrap;
+    border:1px solid rgba(255,255,255,.24);
+    background:linear-gradient(180deg,rgba(255,255,255,.28) 0%,rgba(255,255,255,.11) 46%,rgba(255,255,255,.03) 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.34), 0 1px 3px rgba(0,0,0,.30);
+    transition:filter .12s, transform .08s}
+  .backup-btn:hover{filter:brightness(1.25)}
+  .backup-btn:active{transform:translateY(1px)}
   @media (max-width:1240px){
     .top-in{gap:8px;padding:9px 12px}
     .brand{font-size:17px}
     nav button{padding:7px 8px;font-size:14px}
     .backup-btn{padding:5px 9px;font-size:12.5px}
     .back-btn{padding:6px 10px;font-size:13.5px}
-  }
-  @media (max-width:860px){
-    .brand button{max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .backup-btn{padding:4px 7px;font-size:11.5px}
-    nav button{padding:6px 6px;font-size:13px}
   }
   @media (max-width:1080px){
     .brand{font-size:15.5px;gap:6px}
@@ -199,13 +217,11 @@
     .back-btn{padding:5px 9px;font-size:13px}
     .top-in{gap:6px}
   }
-  nav button{background:none;border:none;color:#CFDDD6;padding:7px 10px;border-radius:8px;
-    font-weight:500;font-size:14.5px}
-  nav button:hover{background:rgba(255,255,255,.09);color:#fff}
-  nav button.on{background:var(--gold);color:#2A2410;font-weight:700}
-  .backup-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);
-    color:#EEF1F7;padding:6px 10px;border-radius:8px;font-size:13px;white-space:nowrap}
-  .backup-btn:hover{background:rgba(255,255,255,.2)}
+  @media (max-width:860px){
+    .brand button{max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .backup-btn{padding:4px 7px;font-size:11.5px}
+    nav button{padding:6px 6px;font-size:13px}
+  }
 
   .hero{position:relative;border-radius:16px;overflow:hidden;margin:20px 0 22px;
     box-shadow:0 8px 28px rgba(30,63,54,.28)}
