@@ -1337,6 +1337,11 @@ function Team({sb, me, leaders, saveLeaders}){
     const {error} = await sb.from("church_profiles").update({role}).eq("id", id);
     if(error) setErr(errMsg(error)); else load();
   };
+  const removeUser = async (r) => {
+    if(!confirm(`${r.name || r.email} 님을 목록에서 지울까요?\n\n이 프로그램의 권한만 사라집니다. 그 사람이 다시 들어오면 승인 대기로 다시 올라옵니다.`)) return;
+    const {error} = await sb.from("church_profiles").delete().eq("id", r.id);
+    if(error) setErr(errMsg(error)); else load();
+  };
 
   const pending = (rows||[]).filter(r=>r.role==="pending");
   const active = (rows||[]).filter(r=>r.role!=="pending");
@@ -1346,6 +1351,7 @@ function Team({sb, me, leaders, saveLeaders}){
       <div className="panel">
         <h2>승인 대기 <span className="muted small">{pending.length}명</span></h2>
         <p className="small muted">여기 보이는 사람은 <b>이 교인관리 프로그램에 직접 들어와 본 사람</b>뿐입니다(회계 프로그램 가입자는 섞이지 않습니다).
+          모르는 사람이 신청했다면 <b>거절</b>을 눌러 목록에서 지우세요.
           가입 신청한 사람 중 <b>믿을 수 있는 분만 승인</b>해 주세요. <b>열람 허용</b>은 보기만, <b>수정 허용</b>은 등록·수정까지 가능합니다.
           속장님은 출석을 저장해야 하므로 <b>수정 허용</b>으로 승인한 뒤, 아래 표에서 <b>담당 속</b>을 정해 주세요.
           담당이 정해지면 교인 신상은 보기만 되고 고칠 수는 없게 됩니다.
@@ -1365,7 +1371,8 @@ function Team({sb, me, leaders, saveLeaders}){
                 <td>{(r.created_at||"").slice(0,10)}</td>
                 <td style={{whiteSpace:"nowrap"}}>
                   <button className="btn sm ghost" onClick={()=>setRole(r.id,"viewer")}>열람 허용</button>{" "}
-                  <button className="btn sm gold" onClick={()=>setRole(r.id,"editor")}>수정 허용</button>
+                  <button className="btn sm gold" onClick={()=>setRole(r.id,"editor")}>수정 허용</button>{" "}
+                  <button className="btn sm danger" onClick={()=>removeUser(r)}>거절</button>
                 </td>
               </tr>))}
             </tbody></table></div>}
@@ -1425,7 +1432,8 @@ function Team({sb, me, leaders, saveLeaders}){
                       }}>관리자로</button>}{" "}
                     <button className="btn sm danger" onClick={()=>{
                       if(confirm(`${r.name||r.email} 님의 접근 권한을 해제할까요? 다시 승인하기 전까지 교인 기록을 볼 수 없게 됩니다.`)) setRole(r.id,"pending");
-                    }}>권한 해제</button>
+                    }}>권한 해제</button>{" "}
+                    <button className="btn sm danger" onClick={()=>removeUser(r)}>목록에서 지우기</button>
                   </React.Fragment>}
                   {r.id===me.id && <span className="muted small">본인 권한은 바꿀 수 없습니다</span>}
                 </td>
