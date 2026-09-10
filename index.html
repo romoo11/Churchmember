@@ -145,8 +145,10 @@
 
   header.top{background:var(--pine-deep);color:#EEF1F7;position:sticky;top:0;z-index:20;
     box-shadow:0 2px 10px rgba(20,40,32,.25)}
-  .top-in{max-width:1020px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-  .brand{font-family:"Gowun Batang",serif;font-weight:700;font-size:19px;display:flex;align-items:center;gap:9px}
+  .top-in{max-width:1320px;margin:0 auto;padding:10px 14px;
+    display:grid;grid-template-columns:auto auto 1fr auto;align-items:center;gap:10px}
+  .brand{font-family:"Gowun Batang",serif;font-weight:700;font-size:18px;
+    display:flex;align-items:center;gap:7px;white-space:nowrap}
   .brand svg{flex:none}
   .brand button{background:none;border:none;color:inherit;font:inherit;padding:0;text-align:left}
   .brand button:hover{text-decoration:underline}
@@ -154,14 +156,36 @@
     border-radius:8px;-webkit-tap-highlight-color:transparent}
   .logo-btn:hover{opacity:.8}
   .back-btn{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#EEF1F7;
-    padding:7px 14px;border-radius:9px;font-size:14.5px;font-weight:600;white-space:nowrap;margin-right:2px}
+    padding:6px 11px;border-radius:9px;font-size:14px;font-weight:600;white-space:nowrap}
   .back-btn:hover{background:rgba(255,255,255,.26)}
-  nav{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
-  nav button{background:none;border:none;color:#CFDDD6;padding:8px 13px;border-radius:8px;font-weight:500}
+  .back-btn.off{visibility:hidden;pointer-events:none}
+  nav{display:flex;gap:2px;justify-content:center;flex-wrap:nowrap;overflow-x:auto;
+    scrollbar-width:none}
+  nav::-webkit-scrollbar{display:none}
+  nav button{white-space:nowrap}
+  .top-right{display:flex;gap:4px;align-items:center;white-space:nowrap}
+  /* 화면이 좁아질수록 조금씩 더 줄여 한 줄을 지킨다 */
+  @media (max-width:1240px){
+    .top-in{gap:8px;padding:9px 12px}
+    .brand{font-size:17px}
+    nav button{padding:7px 8px;font-size:14px}
+    .backup-btn{padding:5px 9px;font-size:12.5px}
+    .back-btn{padding:6px 10px;font-size:13.5px}
+  }
+  @media (max-width:1080px){
+    .brand{font-size:15.5px;gap:6px}
+    .brand svg{width:22px;height:22px}
+    nav button{padding:6px 7px;font-size:13.5px}
+    .backup-btn{padding:5px 8px;font-size:12px}
+    .back-btn{padding:5px 9px;font-size:13px}
+    .top-in{gap:6px}
+  }
+  nav button{background:none;border:none;color:#CFDDD6;padding:7px 10px;border-radius:8px;
+    font-weight:500;font-size:14.5px}
   nav button:hover{background:rgba(255,255,255,.09);color:#fff}
   nav button.on{background:var(--gold);color:#2A2410;font-weight:700}
   .backup-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);
-    color:#EEF1F7;padding:6px 12px;border-radius:8px;font-size:13.5px}
+    color:#EEF1F7;padding:6px 10px;border-radius:8px;font-size:13px;white-space:nowrap}
   .backup-btn:hover{background:rgba(255,255,255,.2)}
 
   .hero{position:relative;border-radius:16px;overflow:hidden;margin:20px 0 22px;
@@ -272,7 +296,11 @@
   .auth-tabs button.on{background:var(--pine);border-color:var(--pine);color:#fff}
 
   @media (max-width:640px){
-    .top-in{padding:8px 12px}
+    .top-in{padding:8px 12px;grid-template-columns:auto 1fr;gap:8px}
+    .top-in > nav{grid-column:1 / -1}
+    .top-in > .top-right{grid-column:1 / -1}
+    nav{justify-content:flex-start}
+    .top-right{flex-wrap:wrap}
     nav{width:100%;overflow-x:auto;flex-wrap:nowrap}
     nav button{white-space:nowrap;padding:7px 11px;font-size:14px}
   }
@@ -1117,14 +1145,14 @@ function App({sb, profile, logout}){
             </button>
             <button onClick={isAdmin ? renameChurch : undefined} title={isAdmin?"교회 이름 바꾸기":""}>{churchName} 교인 관리</button>
           </div>
-          {histLen>0 &&
-            <button className="back-btn" onClick={goBack} title="이전 화면으로">‹ 뒤로</button>}
+          <button className={"back-btn"+(histLen>0?"":" off")} onClick={goBack}
+            title="이전 화면으로" aria-hidden={histLen===0} tabIndex={histLen>0?0:-1}>‹ 뒤로</button>
           <nav>
             {navItems.map(([k,l])=>(
               <button key={k} className={view===k?"on":""} onClick={()=>go(k)}>{l}</button>
             ))}
           </nav>
-          <div className="row" style={{gap:6}}>
+          <div className="top-right">
             {canEdit && !isLeader && <button className="backup-btn" onClick={doExport}>백업</button>}
             {isAdmin && <button className="backup-btn" onClick={()=>fileRef.current.click()}>가져오기</button>}
             <button className="backup-btn" onClick={logout}>{profile.name || "나"} · 로그아웃</button>
