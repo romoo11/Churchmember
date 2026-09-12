@@ -1508,7 +1508,8 @@ function App({sb, profile, logout}){
             meName={profile.name || profile.email} meId={profile.id}/>}
         {view==="team" && isAdmin && <Team sb={sb} me={profile} leaders={leaders} saveLeaders={saveLeaders}/>}
         {view==="cfg" && isAdmin && <ChurchConfig key={cfgVer} saveConfig={saveConfig}
-          homePhoto={homePhoto} homePhotoReady={homePhotoReady} saveSettings={saveSettings}/>}
+          homePhoto={homePhoto} homePhotoReady={homePhotoReady} saveSettings={saveSettings}
+          churchName={churchName}/>}
         </React.Fragment>}
       </div>
       <div className="app-copy">
@@ -2706,7 +2707,7 @@ function LineChart({rows, year, label, today}){
 }
 
 /* ───────── 교회 설정 (관리자 전용) ───────── */
-function ChurchConfig({saveConfig, homePhoto, homePhotoReady, saveSettings}){
+function ChurchConfig({saveConfig, homePhoto, homePhotoReady, saveSettings, churchName}){
   const [c, setC] = useState(currentChurchConfig());
   const [msg, setMsg] = useState("");
   const [saving, setSaving] = useState(false);
