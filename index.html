@@ -67,6 +67,10 @@
   .cls-head.none .nm{color:#63708A}
   .chip.secret{background:#7E2F20;color:#fff}
   td.nw, th.nw{white-space:nowrap}
+  .able{margin-top:5px;white-space:normal;max-width:280px;line-height:1.5}
+  .able span{display:block;font-size:11.5px}
+  .able-yes{color:var(--pine)}
+  .able-no{color:#8A6A2E}
   .scope-col{min-width:230px}
   .scope-row{display:flex;align-items:center;gap:5px;margin-bottom:5px}
   .scope-row .chip{white-space:nowrap}
@@ -1114,7 +1118,8 @@ function App({sb, profile, logout}){
   const editRole = profile.role === "admin" || profile.role === "editor";
   /* 고칠 수 있는 사람 — 장로는 아무리 권한이 있어도 열람만 */
   const canEdit = !isElder && editRole && (isAdmin || isPastor || !isLeader);
-  const canCheckAtt = canEdit || isLeader;                      /* 출석 체크 가능 */
+  /* 출석 체크는 권한이 '수정 허용' 이상일 때만 — 열람 허용은 보기만 합니다 */
+  const canCheckAtt = canEdit || (isLeader && editRole);
   /* 교회학교 담당 교사인지 (부서 하나 이상 맡은 경우) */
   const isSchoolTeacher = isLeader && listScopes.some(k => k === "S_ALL" || k.indexOf("S_") === 0);
   /* 출석 체크만 맡은 분 — 다른 담당이 함께 있으면 명부도 볼 수 있음 */
@@ -1143,6 +1148,7 @@ function App({sb, profile, logout}){
     : members;
   /* 이 사람이 출석을 체크해도 되는 교인인지 */
   const canCheckMember = (m) => {
+    if(!editRole) return false;                                /* 열람 허용은 체크 못 함 */
     if(isAdmin || isPastor) return true;
     if(isElder) return elderScopes.some(k => inScope(m, k));   /* 겸직한 담당만 */
     return canCheckAtt;
@@ -1526,7 +1532,7 @@ function App({sb, profile, logout}){
             }}/>
         )}
         {view==="att" && <Attendance members={attMembers} att={att} saveAtt={saveAtt}
-          canEdit={canCheckAtt || (isElder && elderScopes.length > 0)}
+          canEdit={canCheckAtt || (isElder && editRole && elderScopes.length > 0)}
           canCheckMember={canCheckMember}
           schoolClasses={schoolClasses} specials={specials} saveSpecials={saveSpecials} isAdmin={isAdmin || canEdit}/>}
         {view==="visit" && (!canSeeAllCare
@@ -1559,6 +1565,48 @@ function App({sb, profile, logout}){
 }
 
 /* ───────── 사용자(승인) 관리 ───────── */
+/* 권한 + 담당을 합쳐서 '실제로 할 수 있는 일'을 한 줄로 풀어 줍니다 */
+function abilityOf(role, scopes){
+  if(role === "admin") return {can:"모든 기능", cant:""};
+  if(role === "pending") return {can:"", cant:"승인을 기다리는 중입니다"};
+  const sc = scopes || [];
+  const isPastor = sc.indexOf(PASTOR) >= 0;
+  const isElder  = sc.indexOf(ELDER)  >= 0;
+  const seeCare  = sc.indexOf(CARE_ALL) >= 0;
+  const range    = sc.filter(k => [PASTOR, ELDER, CARE_ALL].indexOf(k) < 0);
+  const attOnly  = range.length === 1 && range[0] === ATT_ONLY;
+  const editRole = role === "editor";
+  const can = [], cant = [];
+
+  /* 무엇을 보나 */
+  if(isPastor || isElder) can.push("성도·교회학교 전체 보기");
+  else if(attOnly) can.push("출석 명단만 보기");
+  else if(range.length) can.push(range.map(scopeLabel).join(", ") + " 보기");
+  else { can.push("달력·일반 중보기도 보기"); cant.push("교인 명부 못 봄"); }
+
+  /* 무엇을 고치나 */
+  const canEditMembers = editRole && !isElder && (isPastor || range.length === 0);
+  if(canEditMembers) can.push("교인 신상 수정");
+  else if(range.length || isPastor || isElder) cant.push("교인 신상 수정 안 됨");
+
+  /* 출석 체크 */
+  if(editRole){
+    if(isPastor) can.push("출석 체크(전체)");
+    else if(isElder && range.length) can.push("출석 체크(" + range.map(scopeLabel).join(", ") + ")");
+    else if(isElder) cant.push("출석 체크 안 됨");
+    else if(attOnly) can.push("출석 체크(성도 전체)");
+    else if(range.length) can.push("출석 체크(" + range.map(scopeLabel).join(", ") + ")");
+  } else if(range.length || isPastor || isElder){
+    cant.push("출석 체크 안 됨 (열람 허용이라서)");
+  }
+
+  /* 심방 */
+  if(seeCare) can.push("심방·긴밀 기도 전체 보기");
+  else if(!attOnly && range.length) cant.push("남이 쓴 심방 기록 못 봄");
+
+  return {can: can.join(" · "), cant: cant.join(" · ")};
+}
+
 function Team({sb, me, leaders, saveLeaders}){
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
@@ -1616,7 +1664,8 @@ function Team({sb, me, leaders, saveLeaders}){
 
       <div className="panel">
         <h2>사용 중인 구성원 <span className="muted small">{active.length}명</span></h2>
-        <p className="small muted"><b>담당</b>을 정하면 그 사람이 무엇을 볼지 결정됩니다.
+        <p className="small muted"><b>권한</b>이 무엇을 고칠 수 있는지, <b>담당</b>이 어디까지 볼 수 있는지를 정합니다.
+          <b>열람 허용</b>이면 담당이 있어도 출석 체크는 안 됩니다. 출석을 맡기시려면 <b>수정 허용</b>으로 주세요.<br/>
           담당을 <b>안 정하면</b> 달력과 일반 중보기도만 보게 됩니다(고치기는 안 됨).<br/>
           · <b>교역자</b> — 성도와 교회학교 전체를 보고 고칠 수 있습니다<br/>
           · <b>장로</b> — 성도와 교회학교 전체를 <b>보기만</b> 합니다(고치기 안 됨).
@@ -1635,7 +1684,12 @@ function Team({sb, me, leaders, saveLeaders}){
                 <td className="nw">{r.name || <span className="muted">이름 없음</span>}{r.id===me.id && " (나)"}</td>
                 <td className="nw">{r.email}</td>
                 <td className="nw"><span className={"chip "+r.role}>{ROLE_LABEL[r.role]||r.role}</span>
-                  {scopesOf(leaders, r.id).length>0 && r.role!=="admin" && <span className="chip editor" style={{marginLeft:4}}>속장·교사</span>}</td>
+                  {scopesOf(leaders, r.id).length>0 && r.role!=="admin" && <span className="chip editor" style={{marginLeft:4}}>담당 있음</span>}
+                  {(()=>{ const ab = abilityOf(r.role, scopesOf(leaders, r.id));
+                    return <div className="able">
+                      {ab.can && <span className="able-yes">{ab.can}</span>}
+                      {ab.cant && <span className="able-no">{ab.cant}</span>}
+                    </div>; })()}</td>
                 <td className="scope-col">
                   {r.role==="admin" ? <span className="muted small">관리자는 전체를 봅니다</span> :
                     <React.Fragment>
