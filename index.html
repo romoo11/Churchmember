@@ -1142,7 +1142,14 @@ function App({sb, profile, logout}){
   const [att, setAtt] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState("");
-  const [entered, setEntered] = useState(false);   /* 시작 화면 → 들어가기 */
+  /* 시작 화면 → 들어가기. 새로고침해도 유지되고, 앱을 닫으면 다시 대문부터 */
+  const [entered, setEntered] = useState(()=>{
+    try{ return sessionStorage.getItem("entered") === "1"; }catch(_){ return false; }
+  });
+  const enterApp = ()=>{
+    try{ sessionStorage.setItem("entered", "1"); }catch(_){}
+    setEntered(true);
+  };
   const [view, setView] = useState("home");
   const [memView, setMemView] = useState({mode:"list"});
   const fileRef = useRef(null);
@@ -1359,8 +1366,22 @@ function App({sb, profile, logout}){
     if(d.churchName && (mode === "replace" || !churchName || churchName === "우리교회")){
       await sb.from("church_settings").upsert({key:"churchName", value:d.churchName});
     }
+    /* 파일에 교회 설정(예배·직분·속회 편성 등)이 함께 담겨 있으면 넣습니다 */
+    let cfgDone = false;
+    if(d.config && typeof d.config === "object" && profile.role === "admin"){
+      const ok = confirm(
+        "이 파일에는 교회 설정(예배 종류 · 직분 · 속회 편성)도 들어 있습니다.\n\n" +
+        "지금 설정을 이 파일의 내용으로 바꿀까요?\n" +
+        "[취소]를 누르면 명단만 넣고 설정은 그대로 둡니다.");
+      if(ok){
+        ({error:e} = await sb.from("church_settings").upsert({key:"churchConfig", value:JSON.stringify(d.config)}));
+        if(e) return fail(e);
+        cfgDone = true;
+      }
+    }
     await loadAll();
-    alert(mode === "merge" ? "명단을 합쳐 넣었습니다." : "가져오기(전체 교체)가 완료되었습니다.");
+    alert((mode === "merge" ? "명단을 합쳐 넣었습니다." : "가져오기(전체 교체)가 완료되었습니다.")
+      + (cfgDone ? "\n교회 설정도 함께 바꿨습니다." : ""));
   };
 
   const saveSettings = async (nextConfig, nextPhoto) => {
@@ -1467,7 +1488,7 @@ function App({sb, profile, logout}){
   }
   if(isAdmin){ navItems.push(["team","사용자"]); navItems.push(["cfg","설정"]); }
 
-  if(!entered) return <Gate churchName={churchName} onEnter={()=>setEntered(true)}/>;
+  if(!entered) return <Gate churchName={churchName} onEnter={enterApp}/>;
 
   return (
     <div>
