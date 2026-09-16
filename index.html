@@ -599,6 +599,11 @@
   .order-no{width:26px;text-align:right;color:#8a94a3;font-size:13px;flex:none}
   .order-nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .order-row .btn.sm{min-width:36px;padding:4px 8px}
+  .order-save-bar{position:sticky;bottom:0;z-index:5;display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+    background:rgba(255,255,255,.96);border:1px solid var(--line, #dde3ea);border-radius:12px;padding:10px 12px;
+    box-shadow:0 -4px 14px rgba(0,0,0,.08);margin-top:6px}
+  @media (max-width:640px){ .order-save-bar{bottom:70px} }
+  @media print{ .order-save-bar{display:none!important} }
   .grp-order-btn{margin-left:8px;font-size:12.5px;padding:2px 10px}
   @media print{ .order-edit button, .grp-order-btn{display:none!important} }
 </style>
@@ -701,6 +706,66 @@ const placeOrder = (allMembers, groupIds) => {
   slots.forEach((pos, i) => { full[pos] = want[i]; });
   return full;
 };
+
+
+/* 교인 명부 [순서 정하기] — 직분마다 묶어 보여 주고, 한 번에 저장 */
+function MultiOrderEditor({groups, onSave, onClose}){
+  const byId = {};
+  (groups || []).forEach(g => (g && g.items || []).forEach(m => { if(m && m.id != null) byId[m.id] = m; }));
+  const [gs, setGs] = useState(() => (groups || []).filter(Boolean).map(g => ({
+    key: g.key, label: g.label, ids: (g.items || []).filter(m => m && m.id != null).map(m => m.id)})));
+  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const upd = (gi, fn) => {
+    setGs(prev => prev.map((g, i) => i === gi ? {...g, ids: fn(g.ids.filter(id => byId[id]))} : g));
+    setDirty(true);
+  };
+  const move = (gi, i, d) => upd(gi, ids => {
+    const j = i + d; if(j < 0 || j >= ids.length) return ids;
+    const n = [...ids]; const x = n[i]; n[i] = n[j]; n[j] = x; return n;
+  });
+  const toTop = (gi, i) => upd(gi, ids => { if(i <= 0) return ids; const n = [...ids]; const [x] = n.splice(i, 1); n.unshift(x); return n; });
+  const resetKo = () => {
+    if(!confirm("모든 직분의 순서를 가나다순으로 되돌릴까요? (저장을 눌러야 반영됩니다)")) return;
+    setGs(prev => prev.map(g => ({...g, ids: g.ids.filter(id => byId[id]).sort((a, b) => koSort(byId[a], byId[b]))})));
+    setDirty(true);
+  };
+  const save = async () => {
+    setBusy(true);
+    try{ await onSave(gs.flatMap(g => g.ids.filter(id => byId[id]))); setDirty(false); onClose(true); }
+    catch(e){ alert("순서를 저장하지 못했습니다. " + errMsg(e)); }
+    finally{ setBusy(false); }
+  };
+  const cancel = () => { if(!dirty || confirm("바꾼 순서를 저장하지 않고 나갈까요?")) onClose(false); };
+  return (
+    <div>
+      <div className="panel" style={{padding:"12px 16px"}}>
+        <b>교인 순서 정하기</b>
+        <p className="muted small" style={{margin:"4px 0 0"}}>
+          같은 직분 안에서 <b>▲ ▼</b>로 한 칸씩, <b>⤒</b>로 맨 위로 옮기고 아래 <b>순서 저장</b>을 눌러 주세요.
+          선임을 앞에 두시면 됩니다. 저장한 순서는 직분별 명부 · 속별 명부 · 출석 체크에 함께 쓰이고,
+          새로 등록한 분은 그 직분의 맨 뒤에 붙습니다.</p>
+      </div>
+      {gs.map((g, gi) => { const ids = g.ids.filter(id => byId[id]); if(!ids.length) return null; return (
+        <div key={g.key} className="order-edit" style={{marginBottom:14}}>
+          <h3 style={{margin:"2px 0 6px", fontSize:"16px", color:"var(--pine-deep)"}}>{g.label} <span className="muted small">{ids.length}명</span></h3>
+          {ids.map((id, i) => { const m = byId[id]; return (
+            <div key={id} className="order-row">
+              <span className="order-no">{i+1}</span>
+              <span className="order-nm">{m.name} <span className="muted small">{m.position}</span></span>
+              <button type="button" className="btn sm ghost" onClick={()=>toTop(gi,i)} disabled={busy || i===0 || ids.length<2} title="맨 위로" aria-label="맨 위로">⤒</button>
+              <button type="button" className="btn sm ghost" onClick={()=>move(gi,i,-1)} disabled={busy || i===0} aria-label="위로">▲</button>
+              <button type="button" className="btn sm ghost" onClick={()=>move(gi,i,1)} disabled={busy || i===ids.length-1} aria-label="아래로">▼</button>
+            </div>); })}
+        </div>); })}
+      <div className="order-save-bar">
+        <button type="button" className="btn" onClick={save} disabled={busy}>{busy ? "저장 중…" : (dirty ? "순서 저장" : "순서 저장 (바뀐 것 없음)")}</button>
+        <button type="button" className="btn ghost" onClick={cancel} disabled={busy}>나가기</button>
+        <button type="button" className="btn ghost" style={{marginLeft:"auto"}} onClick={resetKo} disabled={busy}>가나다순으로 되돌리기</button>
+      </div>
+    </div>
+  );
+}
 
 /* 순서 바꾸기 — ▲▼ 로 자리를 옮기고 한 번에 저장 */
 function OrderEditor({items, onSave, onClose}){
@@ -2319,8 +2384,8 @@ function MemberList({members: members0, setMemView, canEdit, schoolClasses, save
       return a.localeCompare(b,"ko");
     })];
   const list = members
-    .filter(m => book!=="all" || pos==="전체" || m.position===pos)
-    .filter(m => !q || (m.name+m.phone+m.address).includes(q))
+    .filter(m => book!=="all" || mode==="order" || pos==="전체" || m.position===pos)
+    .filter(m => (book==="all" && mode==="order") || !q || (m.name+m.phone+m.address).includes(q))
     .sort((book==="all" && mode==="name") ? koSort : orderSort);   /* 가나다순 보기만 가나다, 나머지는 교회가 정한 순서 */
   const orderBtn = key => (canOrder && saveOrder && !q)
     ? <button type="button" className="btn sm ghost grp-order-btn" onClick={()=>setOrdering(ordering===key ? null : key)}>
@@ -2387,13 +2452,16 @@ function MemberList({members: members0, setMemView, canEdit, schoolClasses, save
           <button className={book==="school"?"on":""} onClick={()=>setBook("school")}>교회학교</button>
         </div>
         <div className="row" style={{marginTop:12}}>
-          <input placeholder="이름·연락처·주소 검색" value={q} onChange={e=>setQ(e.target.value)} style={{flex:"1 1 200px"}}/>
-          {book==="all" && <select value={pos} onChange={e=>setPos(e.target.value)}>
+          {!(book==="all" && mode==="order") &&
+          <input placeholder="이름·연락처·주소 검색" value={q} onChange={e=>setQ(e.target.value)} style={{flex:"1 1 200px"}}/>}
+          {book==="all" && mode!=="order" && <select value={pos} onChange={e=>setPos(e.target.value)}>
             {positions.map(p=><option key={p}>{p}</option>)}
           </select>}
           {book==="all" && <div className="svc-tabs" style={{margin:0}}>
             <button className={mode==="pos"?"on":""} onClick={()=>setMode("pos")}>직분별</button>
             <button className={mode==="name"?"on":""} onClick={()=>setMode("name")}>가나다순</button>
+            {canOrder && saveOrder &&
+              <button className={mode==="order"?"on":""} onClick={()=>{ setOrdering(null); setMode("order"); }}>순서 정하기</button>}
           </div>}
         </div>
       </div>
@@ -2428,6 +2496,9 @@ function MemberList({members: members0, setMemView, canEdit, schoolClasses, save
             </div>
           ))}
         </div>
+       : (mode==="order" && canOrder && saveOrder) ?
+        <MultiOrderEditor key={"ord"+list.length} groups={groups.map(g=>({key:g.pos, label:g.pos, items:g.items}))}
+          onSave={saveOrder} onClose={()=>setMode("pos")}/>
        : mode==="name" ?
         <div className="mem-list">
           {list.map(m=>(
@@ -2438,7 +2509,7 @@ function MemberList({members: members0, setMemView, canEdit, schoolClasses, save
         <div>
           {groups.map(g=>(
             <div key={g.pos} style={{marginBottom:18}}>
-              <h3 style={gTitle}>{g.pos} <span className="muted small">{g.items.length}명</span></h3>{orderBtn("pos:"+g.pos)}
+              <h3 style={gTitle}>{g.pos} <span className="muted small">{g.items.length}명</span></h3>
               {ordering==="pos:"+g.pos
                 ? <OrderEditor items={g.items} onSave={saveOrder} onClose={()=>setOrdering(null)}/>
                 : <div className="mem-list">
